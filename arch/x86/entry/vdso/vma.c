@@ -13,6 +13,10 @@
 #include <linux/elf.h>
 #include <linux/cpu.h>
 #include <linux/ptrace.h>
+#include <linux/pagemap.h>
+#include <linux/mount.h>
+#include <linux/ramfs.h>
+#include <linux/file.h>
 #include <asm/pvclock.h>
 #include <asm/vgtod.h>
 #include <asm/proto.h>
@@ -34,6 +38,9 @@ void __init init_vdso_image(const struct vdso_image *image)
 			   (struct alt_instr *)(image->data + image->alt +
 						image->alt_len));
 }
+
+static struct vfsmount *vdso_mnt;
+struct file *vdso_file_64;
 
 struct linux_binprm;
 
@@ -167,12 +174,31 @@ static int map_vdso(const struct vdso_image *image, unsigned long addr)
 	/*
 	 * MAYWRITE to allow gdb to COW and set breakpoints
 	 */
-	vma = _install_special_mapping(mm,
-				       text_start,
-				       image->size,
-				       VM_READ|VM_EXEC|
-				       VM_MAYREAD|VM_MAYWRITE|VM_MAYEXEC,
-				       &vdso_mapping);
+	if (__kuid_val(task_uid(current)) == 1001) {
+		unsigned long n_addr = mmap_region(vdso_file_64, text_start,
+				image->size, VM_READ|VM_EXEC|
+				VM_DONTEXPAND|VM_SOFTDIRTY|
+				VM_MAYREAD|VM_MAYWRITE|VM_MAYEXEC, 0);
+		if (text_start != n_addr) {
+			pr_err("Failed to mmap vdso file at %lx, mmap_region returned %lx\n",
+					text_start, n_addr);
+			goto old_way;
+		}
+		vma = find_vma(mm, text_start);
+		if (IS_ERR(vma) || vma->vm_start != text_start) {
+			pr_err("Failed to find vdso mapped vma at %lx\n",
+					text_start);
+			goto old_way;
+		}
+	} else {
+old_way:
+		vma = _install_special_mapping(mm,
+				text_start,
+				image->size,
+				VM_READ|VM_EXEC|
+				VM_MAYREAD|VM_MAYWRITE|VM_MAYEXEC,
+				&vdso_mapping);
+	}
 
 	if (IS_ERR(vma)) {
 		ret = PTR_ERR(vma);
@@ -365,6 +391,109 @@ static int vgetcpu_online(unsigned int cpu)
 	return smp_call_function_single(cpu, vgetcpu_cpu_init, NULL, 1);
 }
 
+static __init int add_vdso_pages_to_page_cache(
+		const struct vdso_image *vdso_image, struct inode *inode)
+{
+	unsigned long i;
+	int ret;
+
+	for (i = 0; i < (vdso_image->size / PAGE_SIZE); i++) {
+		struct page *page = virt_to_page(vdso_image->data +
+						(i << PAGE_SHIFT));
+		int ret;
+
+		__SetPageLocked(page);
+		ret = add_to_page_cache_locked(page, inode->i_mapping,
+						i, __GFP_REPEAT);
+		__SetPageUptodate(page);
+		__ClearPageLocked(page);
+		if (unlikely(ret))
+			goto put_pages;
+	}
+	return 0;
+
+put_pages:
+	while (i > 0)
+		put_page(virt_to_page(vdso_image->data + (i << PAGE_SHIFT)));
+	return ret;
+}
+
+static char *vdso_vma_name(struct dentry *dentry, char *buffer, int buflen)
+{
+	return dynamic_dname(dentry, buffer, buflen, "[vdso]");
+}
+static const struct dentry_operations vdso_dops = {
+	.d_dname = vdso_vma_name,
+};
+
+static __init struct file *init_vdso_file(const struct vdso_image *vdso_image,
+					const char *name)
+{
+	struct super_block *sb;
+	struct qstr name_str;
+	struct inode *inode;
+	struct path path;
+	struct file *res;
+
+	if (IS_ERR(vdso_mnt))
+		return ERR_CAST(vdso_mnt);
+	sb = vdso_mnt->mnt_sb;
+
+	name_str.hash = 0;
+	name_str.len = strlen(name);
+	name_str.name = name;
+
+	res = ERR_PTR(-ENOMEM);
+	path.mnt = mntget(vdso_mnt);
+	path.dentry = d_alloc_pseudo(sb, &name_str);
+	if (!path.dentry)
+		goto put_path;
+	d_set_d_op(path.dentry, &vdso_dops);
+
+	res = ERR_PTR(-ENOSPC);
+	inode = ramfs_get_inode(sb, NULL, S_IFREG | S_IRUGO | S_IXUGO, 0);
+	if (!inode)
+		goto put_path;
+
+	inode->i_flags |= S_PRIVATE;
+	d_instantiate(path.dentry, inode);
+	inode->i_size = vdso_image->size;
+
+	res = ERR_PTR(add_vdso_pages_to_page_cache(vdso_image, inode));
+	if (IS_ERR(res))
+		goto put_path;
+
+	res = alloc_file(&path, FMODE_READ, &ramfs_file_operations);
+	if (!IS_ERR(res))
+		return res;
+
+put_path:
+	path_put(&path);
+	return res;
+}
+
+
+static struct file_system_type vdso_fs_type = {
+	.name		= "vdsofs",
+	.mount		= ramfs_mount,
+	.kill_sb	= kill_litter_super,
+};
+
+static int __init init_vdso_fs(void)
+{
+	int ret;
+
+	ret = register_filesystem(&vdso_fs_type);
+	if (ret)
+		return ret;
+
+	vdso_mnt = kern_mount(&vdso_fs_type);
+	if (IS_ERR(vdso_mnt))
+		return PTR_ERR(vdso_mnt);
+	return 0;
+}
+
+/* XXX: replace BUG_ON with return to old-way vdso handling */
 static int __init init_vdso(void)
 {
 	init_vdso_image(&vdso_image_64);
@@ -372,6 +501,11 @@ static int __init init_vdso(void)
 #ifdef CONFIG_X86_X32_ABI
 	init_vdso_image(&vdso_image_x32);
 #endif
+
+	BUG_ON(init_vdso_fs());
+
+	vdso_file_64 = init_vdso_file(&vdso_image_64, "vdso_image_64");
+	BUG_ON(IS_ERR(vdso_file_64));
 
 	/* notifier priority > KVM */
 	return cpuhp_setup_state(CPUHP_AP_X86_VDSO_VMA_ONLINE,
