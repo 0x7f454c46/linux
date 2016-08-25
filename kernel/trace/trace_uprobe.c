@@ -23,6 +23,7 @@
 #include <linux/uprobes.h>
 #include <linux/namei.h>
 #include <linux/string.h>
+#include <linux/mount.h>
 
 #include "trace_probe.h"
 
@@ -356,6 +357,9 @@ end:
  *
  *  - Remove uprobe: -:[GRP/]EVENT
  */
+extern struct vfsmount *vdso_mnt;
+extern int vfs_path_lookup(struct dentry *, struct vfsmount *,
+			   const char *, unsigned int, struct path *);
 static int create_trace_uprobe(int argc, char **argv)
 {
 	struct trace_uprobe *tu;
@@ -431,15 +435,41 @@ static int create_trace_uprobe(int argc, char **argv)
 		pr_info("Probe point is not specified.\n");
 		return -EINVAL;
 	}
-	arg = strchr(argv[1], ':');
-	if (!arg) {
-		ret = -EINVAL;
-		goto fail_address_parse;
-	}
+	if (argv[1][0] == ':') {
+		arg = strchr(&argv[1][1], ':');
+		if (!arg) {
+			ret = -EINVAL;
+			goto fail_address_parse;
+		}
+		*arg++ = '\0';
+		if (strcmp(&argv[1][1], "vdso")) {
+			ret = -EINVAL;
+			goto fail_address_parse;
+		}
+		filename = arg;
+		arg = strchr(filename, ':');
+		if (!filename) {
+			ret = -EINVAL;
+			goto fail_address_parse;
+		}
+		*arg++ = '\0';
+		if (!vdso_mnt) {
+			ret = -ENODEV;
+			goto fail_address_parse;
+		}
+		ret = vfs_path_lookup(vdso_mnt->mnt_root, vdso_mnt,
+				filename, LOOKUP_FOLLOW, &path);
+	} else {
+		arg = strchr(argv[1], ':');
+		if (!arg) {
+			ret = -EINVAL;
+			goto fail_address_parse;
+		}
 
-	*arg++ = '\0';
-	filename = argv[1];
-	ret = kern_path(filename, LOOKUP_FOLLOW, &path);
+		*arg++ = '\0';
+		filename = argv[1];
+		ret = kern_path(filename, LOOKUP_FOLLOW, &path);
+	}
 	if (ret)
 		goto fail_address_parse;
 

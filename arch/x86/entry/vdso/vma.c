@@ -39,7 +39,7 @@ void __init init_vdso_image(const struct vdso_image *image)
 						image->alt_len));
 }
 
-static struct vfsmount *vdso_mnt;
+struct vfsmount *vdso_mnt;
 struct file *vdso_file_64;
 
 struct linux_binprm;
@@ -430,38 +430,40 @@ static __init struct file *init_vdso_file(const struct vdso_image *vdso_image,
 					const char *name)
 {
 	struct super_block *sb;
-	struct qstr name_str;
 	struct inode *inode;
 	struct path path;
 	struct file *res;
+	int ret;
 
 	if (IS_ERR(vdso_mnt))
 		return ERR_CAST(vdso_mnt);
 	sb = vdso_mnt->mnt_sb;
 
-	name_str.hash = 0;
-	name_str.len = strlen(name);
-	name_str.name = name;
-
 	res = ERR_PTR(-ENOMEM);
 	path.mnt = mntget(vdso_mnt);
-	path.dentry = d_alloc_pseudo(sb, &name_str);
-	if (!path.dentry)
+	path.dentry = d_alloc_name(vdso_mnt->mnt_root, name);
+	if (!path.dentry) {
+		pr_err("Failed to allocate dentry for %s vdso file\n", name);
 		goto put_path;
+	}
 	d_set_d_op(path.dentry, &vdso_dops);
 
 	res = ERR_PTR(-ENOSPC);
 	inode = ramfs_get_inode(sb, NULL, S_IFREG | S_IRUGO | S_IXUGO, 0);
-	if (!inode)
+	if (!inode) {
+		pr_err("Failed to get inode for %s vdso file\n", name);
 		goto put_path;
+	}
 
 	inode->i_flags |= S_PRIVATE;
-	d_instantiate(path.dentry, inode);
+	d_add(path.dentry, inode);
 	inode->i_size = vdso_image->size;
 
-	res = ERR_PTR(add_vdso_pages_to_page_cache(vdso_image, inode));
-	if (IS_ERR(res))
+	ret = add_vdso_pages_to_page_cache(vdso_image, inode);
+	if (ret) {
+		pr_err("Failed to put %s pages in page cache: %d\n", name, ret);
 		goto put_path;
+	}
 
 	res = alloc_file(&path, FMODE_READ, &ramfs_file_operations);
 	if (!IS_ERR(res))
@@ -504,7 +506,7 @@ static int __init init_vdso(void)
 
 	BUG_ON(init_vdso_fs());
 
-	vdso_file_64 = init_vdso_file(&vdso_image_64, "vdso_image_64");
+	vdso_file_64 = init_vdso_file(&vdso_image_64, "64");
 	BUG_ON(IS_ERR(vdso_file_64));
 
 	/* notifier priority > KVM */
