@@ -681,7 +681,7 @@ static struct xfrm_state *xfrm_user_state_lookup(struct net *net,
 	int err;
 	u32 mark = xfrm_mark_get(attrs, &m);
 
-	if (xfrm_id_proto_match(p->proto, IPSEC_PROTO_ANY)) {
+	if (xfrm_id_proto_match(p->proto, IPSEC_PROTO_ANY) && p->spi) {
 		err = -ESRCH;
 		x = xfrm_state_lookup(net, mark, &p->daddr, p->spi, p->proto, p->family);
 	} else {
