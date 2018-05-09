@@ -439,10 +439,8 @@ static void _crng_backtrack_protect(struct crng_state *crng,
 static void process_random_ready_list(void);
 static void _get_random_bytes(void *buf, int nbytes);
 
-static struct ratelimit_state unseeded_warning =
-	RATELIMIT_STATE_INIT("warn_unseeded_randomness", HZ, 3);
-static struct ratelimit_state urandom_warning =
-	RATELIMIT_STATE_INIT("warn_urandom_randomness", HZ, 3);
+static struct ratelimit_state unseeded_warning = RATELIMIT_STATE_INIT(HZ, 3);
+static struct ratelimit_state urandom_warning = RATELIMIT_STATE_INIT(HZ, 3);
 
 static int ratelimit_disable __read_mostly;
 
@@ -937,24 +935,22 @@ static void crng_reseed(struct crng_state *crng, struct entropy_store *r)
 	crng->init_time = jiffies;
 	spin_unlock_irqrestore(&crng->lock, flags);
 	if (crng == &primary_crng && crng_init < 2) {
+		unsigned int unseeded_miss, urandom_miss;
+
 		invalidate_batched_entropy();
 		numa_crng_init();
 		crng_init = 2;
 		process_random_ready_list();
 		wake_up_interruptible(&crng_init_wait);
 		pr_notice("random: crng init done\n");
-		if (unseeded_warning.missed) {
-			pr_notice("random: %d get_random_xx warning(s) missed "
-				  "due to ratelimiting\n",
-				  unseeded_warning.missed);
-			unseeded_warning.missed = 0;
-		}
-		if (urandom_warning.missed) {
-			pr_notice("random: %d urandom warning(s) missed "
-				  "due to ratelimiting\n",
-				  urandom_warning.missed);
-			urandom_warning.missed = 0;
-		}
+		unseeded_miss = atomic_xchg(&unseeded_warning.missed, 0);
+		if (unseeded_miss)
+			pr_notice("random: %u get_random_xx warning(s) missed "
+				  "due to ratelimiting\n", unseeded_miss);
+		urandom_miss = atomic_xchg(&urandom_warning.missed, 0);
+		if (urandom_miss)
+			pr_notice("random: %u urandom warning(s) missed "
+				  "due to ratelimiting\n", urandom_miss);
 	}
 }
 

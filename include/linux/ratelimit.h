@@ -4,7 +4,6 @@
 
 #include <linux/param.h>
 #include <linux/sched.h>
-#include <linux/spinlock.h>
 
 #define DEFAULT_RATELIMIT_INTERVAL	(5 * HZ)
 #define DEFAULT_RATELIMIT_BURST		10
@@ -13,38 +12,39 @@
 #define RATELIMIT_MSG_ON_RELEASE	BIT(0)
 
 struct ratelimit_state {
-	raw_spinlock_t	lock;		/* protect the state */
+	atomic_t	printed;
+	atomic_t	missed;
 
 	int		interval;
 	int		burst;
-	int		printed;
-	int		missed;
 	unsigned long	begin;
 	unsigned long	flags;
 };
 
-#define RATELIMIT_STATE_INIT(name, interval_init, burst_init) {		\
-		.lock		= __RAW_SPIN_LOCK_UNLOCKED(name.lock),	\
+#define RATELIMIT_STATE_INIT(interval_init, burst_init) {		\
 		.interval	= interval_init,			\
 		.burst		= burst_init,				\
+		.printed	= ATOMIC_INIT(0),			\
+		.missed		= ATOMIC_INIT(0),			\
 	}
 
 #define RATELIMIT_STATE_INIT_DISABLED					\
-	RATELIMIT_STATE_INIT(ratelimit_state, 0, DEFAULT_RATELIMIT_BURST)
+	RATELIMIT_STATE_INIT(0, DEFAULT_RATELIMIT_BURST)
 
 #define DEFINE_RATELIMIT_STATE(name, interval_init, burst_init)		\
 									\
 	struct ratelimit_state name =					\
-		RATELIMIT_STATE_INIT(name, interval_init, burst_init)	\
+		RATELIMIT_STATE_INIT(interval_init, burst_init)
 
 static inline void ratelimit_state_init(struct ratelimit_state *rs,
 					int interval, int burst)
 {
 	memset(rs, 0, sizeof(*rs));
 
-	raw_spin_lock_init(&rs->lock);
 	rs->interval	= interval;
 	rs->burst	= burst;
+	atomic_set(&rs->printed, 0);
+	atomic_set(&rs->missed, 0);
 }
 
 static inline void ratelimit_default_init(struct ratelimit_state *rs)
@@ -53,16 +53,21 @@ static inline void ratelimit_default_init(struct ratelimit_state *rs)
 					DEFAULT_RATELIMIT_BURST);
 }
 
+/*
+ * Keeping It Simple: not reenterable and not safe for concurrent
+ * ___ratelimit() call as used only by devkmsg_release().
+ */
 static inline void ratelimit_state_exit(struct ratelimit_state *rs)
 {
+	int missed;
+
 	if (!(rs->flags & RATELIMIT_MSG_ON_RELEASE))
 		return;
 
-	if (rs->missed) {
+	missed = atomic_xchg(&rs->missed, 0);
+	if (missed)
 		pr_warn("%s: %d output lines suppressed due to ratelimiting\n",
-			current->comm, rs->missed);
-		rs->missed = 0;
-	}
+			current->comm, missed);
 }
 
 static inline void

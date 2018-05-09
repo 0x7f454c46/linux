@@ -1295,6 +1295,7 @@ free_oa_buffer(struct drm_i915_private *i915)
 static void i915_oa_stream_destroy(struct i915_perf_stream *stream)
 {
 	struct drm_i915_private *dev_priv = stream->dev_priv;
+	unsigned int msg_missed;
 
 	BUG_ON(stream != dev_priv->perf.oa.exclusive_stream);
 
@@ -1317,9 +1318,10 @@ static void i915_oa_stream_destroy(struct i915_perf_stream *stream)
 
 	put_oa_config(dev_priv, stream->oa_config);
 
-	if (dev_priv->perf.oa.spurious_report_rs.missed) {
-		DRM_NOTE("%d spurious OA report notices suppressed due to ratelimiting\n",
-			 dev_priv->perf.oa.spurious_report_rs.missed);
+	msg_missed = atomic_read(&dev_priv->perf.oa.spurious_report_rs.missed);
+	if (msg_missed) {
+		DRM_NOTE("%u spurious OA report notices suppressed due to ratelimiting\n",
+			 msg_missed);
 	}
 }
 

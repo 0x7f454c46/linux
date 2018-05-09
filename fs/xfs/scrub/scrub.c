@@ -349,7 +349,7 @@ xfs_scrub_experimental_warning(
 	struct xfs_mount	*mp)
 {
 	static struct ratelimit_state scrub_warning = RATELIMIT_STATE_INIT(
-			"xfs_scrub_warning", 86400 * HZ, 1);
+			86400 * HZ, 1);
 	ratelimit_set_flags(&scrub_warning, RATELIMIT_MSG_ON_RELEASE);
 
 	if (__ratelimit(&scrub_warning))

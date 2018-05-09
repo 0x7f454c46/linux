@@ -13,6 +13,18 @@
 #include <linux/jiffies.h>
 #include <linux/export.h>
 
+static void ratelimit_end_interval(struct ratelimit_state *rs, const char *func)
+{
+	rs->begin = jiffies;
+
+	if (!(rs->flags & RATELIMIT_MSG_ON_RELEASE)) {
+		unsigned int missed = atomic_xchg(&rs->missed, 0);
+
+		if (missed)
+			pr_warn("%s: %u callbacks suppressed\n", func, missed);
+	}
+}
+
 /*
  * __ratelimit - rate limiting
  * @rs: ratelimit_state data
@@ -27,45 +39,30 @@
  */
 int ___ratelimit(struct ratelimit_state *rs, const char *func)
 {
-	unsigned long flags;
-	int ret;
-
 	if (!rs->interval)
 		return 1;
 
-	/*
-	 * If we contend on this state's lock then almost
-	 * by definition we are too busy to print a message,
-	 * in addition to the one that will be printed by
-	 * the entity that is holding the lock already:
-	 */
-	if (!raw_spin_trylock_irqsave(&rs->lock, flags))
-		return 0;
+	if (unlikely(!rs->burst)) {
+		atomic_add_unless(&rs->missed, 1, -1);
+		if (time_is_before_jiffies(rs->begin + rs->interval))
+			ratelimit_end_interval(rs, func);
 
-	if (!rs->begin)
-		rs->begin = jiffies;
+		return 0;
+	}
+
+	if (atomic_add_unless(&rs->printed, 1, rs->burst))
+		return 1;
 
 	if (time_is_before_jiffies(rs->begin + rs->interval)) {
-		if (rs->missed) {
-			if (!(rs->flags & RATELIMIT_MSG_ON_RELEASE)) {
-				printk_deferred(KERN_WARNING
-						"%s: %d callbacks suppressed\n",
-						func, rs->missed);
-				rs->missed = 0;
-			}
-		}
-		rs->begin   = jiffies;
-		rs->printed = 0;
+		if (atomic_cmpxchg(&rs->printed, rs->burst, 0))
+			ratelimit_end_interval(rs, func);
 	}
-	if (rs->burst && rs->burst > rs->printed) {
-		rs->printed++;
-		ret = 1;
-	} else {
-		rs->missed++;
-		ret = 0;
-	}
-	raw_spin_unlock_irqrestore(&rs->lock, flags);
 
-	return ret;
+	if (atomic_add_unless(&rs->printed, 1, rs->burst))
+		return 1;
+
+	atomic_add_unless(&rs->missed, 1, -1);
+
+	return 0;
 }
 EXPORT_SYMBOL(___ratelimit);
