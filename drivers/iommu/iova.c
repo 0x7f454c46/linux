@@ -336,26 +336,6 @@ static void private_free_iova(struct iova_domain *iovad, struct iova *iova)
 }
 
 /**
- * find_iova - finds an iova for a given pfn
- * @iovad: - iova domain in question.
- * @pfn: - page frame number
- * This function finds and returns an iova belonging to the
- * given doamin which matches the given pfn.
- */
-struct iova *find_iova(struct iova_domain *iovad, unsigned long pfn)
-{
-	unsigned long flags;
-	struct iova *iova;
-
-	/* Take the lock so that no other thread is manipulating the rbtree */
-	spin_lock_irqsave(&iovad->iova_rbtree_lock, flags);
-	iova = private_find_iova(iovad, pfn);
-	spin_unlock_irqrestore(&iovad->iova_rbtree_lock, flags);
-	return iova;
-}
-EXPORT_SYMBOL_GPL(find_iova);
-
-/**
  * __free_iova - frees the given iova
  * @iovad: iova domain in question.
  * @iova: iova in question.

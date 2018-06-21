@@ -158,7 +158,6 @@ void init_iova_domain(struct iova_domain *iovad, unsigned long granule,
 	unsigned long start_pfn);
 int init_iova_flush_queue(struct iova_domain *iovad,
 			  iova_flush_cb flush_cb, iova_entry_dtor entry_dtor);
-struct iova *find_iova(struct iova_domain *iovad, unsigned long pfn);
 void put_iova_domain(struct iova_domain *iovad);
 struct iova *iova_split_and_pop(struct iova_domain *iovad,
 		unsigned long pfn_lo, unsigned long pfn_hi);
@@ -241,12 +240,6 @@ static inline int init_iova_flush_queue(struct iova_domain *iovad,
 					iova_entry_dtor entry_dtor)
 {
 	return -ENODEV;
-}
-
-static inline struct iova *find_iova(struct iova_domain *iovad,
-				     unsigned long pfn)
-{
-	return NULL;
 }
 
 static inline void put_iova_domain(struct iova_domain *iovad)
