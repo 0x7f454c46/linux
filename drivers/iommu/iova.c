@@ -715,23 +715,27 @@ copy_reserved_iova(struct iova_domain *from, struct iova_domain *to)
 }
 EXPORT_SYMBOL_GPL(copy_reserved_iova);
 
-struct iova *
-split_and_remove_iova(struct iova_domain *iovad, struct iova *iova,
+struct iova *iova_split_and_pop(struct iova_domain *iovad,
 		      unsigned long pfn_lo, unsigned long pfn_hi)
 {
-	unsigned long flags;
 	struct iova *prev = NULL, *next = NULL;
+	unsigned long flags;
+	struct iova *iova;
 
 	spin_lock_irqsave(&iovad->iova_rbtree_lock, flags);
+	iova = private_find_iova(iovad, pfn_lo);
+	if (iova == NULL)
+		goto err_unlock;
+
 	if (iova->pfn_lo < pfn_lo) {
 		prev = alloc_and_init_iova(iova->pfn_lo, pfn_lo - 1);
 		if (prev == NULL)
-			goto error;
+			goto err_unlock;
 	}
 	if (iova->pfn_hi > pfn_hi) {
 		next = alloc_and_init_iova(pfn_hi + 1, iova->pfn_hi);
 		if (next == NULL)
-			goto error;
+			goto err_free;
 	}
 
 	__cached_rbnode_delete_update(iovad, iova);
@@ -749,10 +753,11 @@ split_and_remove_iova(struct iova_domain *iovad, struct iova *iova,
 
 	return iova;
 
-error:
-	spin_unlock_irqrestore(&iovad->iova_rbtree_lock, flags);
+err_free:
 	if (prev)
 		free_iova_mem(prev);
+err_unlock:
+	spin_unlock_irqrestore(&iovad->iova_rbtree_lock, flags);
 	return NULL;
 }
 

@@ -4530,19 +4530,11 @@ static int intel_iommu_memory_notifier(struct notifier_block *nb,
 			struct intel_iommu *iommu;
 			struct page *freelist;
 
-			iova = find_iova(&si_domain->iovad, start_vpfn);
+			iova = iova_split_and_pop(&si_domain->iovad, start_vpfn, last_vpfn);
 			if (iova == NULL) {
-				pr_debug("Failed get IOVA for PFN %lx\n",
-					 start_vpfn);
-				break;
-			}
-
-			iova = split_and_remove_iova(&si_domain->iovad, iova,
-						     start_vpfn, last_vpfn);
-			if (iova == NULL) {
-				pr_warn("Failed to split IOVA PFN [%lx-%lx]\n",
+				pr_warn("Failed to split & pop IOVA PFN [%lx-%lx]\n",
 					start_vpfn, last_vpfn);
-				return NOTIFY_BAD;
+				break;
 			}
 
 			freelist = domain_unmap(si_domain, iova->pfn_lo,
