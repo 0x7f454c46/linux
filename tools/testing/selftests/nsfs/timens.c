@@ -4,7 +4,9 @@
 #include <fcntl.h>
 #include <sched.h>
 #include <stdio.h>
+#include <stdbool.h>
 #include <sys/stat.h>
+#include <sys/syscall.h>
 #include <sys/types.h>
 #include <time.h>
 #include <unistd.h>
@@ -47,8 +49,9 @@
 	ct(CLOCK_MONOTONIC_COARSE),					\
 	ct(CLOCK_MONOTONIC_RAW),					\
 	ct(CLOCK_BOOTTIME),						\
-	ct(CLOCK_PROCESS_CPUTIME_ID),					\
-	ct(CLOCK_THREAD_CPUTIME_ID),
+//	TODO: API to set CPUTIME
+//	ct(CLOCK_PROCESS_CPUTIME_ID),					\
+//	ct(CLOCK_THREAD_CPUTIME_ID),
 
 #define ct(clock)	clock
 static clockid_t clocks[] = {
@@ -112,16 +115,45 @@ static int init_namespaces(void)
 	return 0;
 }
 
-static inline int _gettime(clockid_t clk_id, struct timespec *res)
+static int _gettime(clockid_t clk_id, struct timespec *res, bool raw_syscall)
 {
-	if (clock_gettime(clk_id, res)) {
-		pr_perror("clock_gettime(%d)", (int)clk_id);
-		return -1;
+	int err;
+
+	if (!raw_syscall) {
+		if (clock_gettime(clk_id, res)) {
+			pr_perror("clock_gettime(%d)", (int)clk_id);
+			return -1;
+		}
+		return 0;
 	}
-	return 0;
+
+	err = syscall(SYS_clock_gettime, clk_id, res);
+	if (err)
+		pr_perror("syscall(SYS_clock_gettime(%d))", (int)clk_id);
+
+	return err;
 }
 
-static int test_gettime(unsigned clock_index)
+static int _settime(clockid_t clk_id, struct timespec *res, bool raw_syscall)
+{
+	int err;
+
+	if (!raw_syscall) {
+		if (clock_settime(clk_id, res)) {
+			pr_perror("clock_settime(%s)", (int)clk_id);
+			return -1;
+		}
+		return 0;
+	}
+
+	err = syscall(SYS_clock_settime, clk_id, res);
+	if (err)
+		pr_perror("syscall(SYS_clock_settime(%d))", (int)clk_id);
+
+	return err;
+}
+
+static int test_gettime(unsigned clock_index, bool raw_syscall)
 {
 	struct timespec child_ts_old, child_ts_new;
 	struct timespec parent_ts;
@@ -131,23 +163,21 @@ static int test_gettime(unsigned clock_index)
 		return -1;
 	}
 
-	if (_gettime(clocks[clock_index], &child_ts_old))
+	if (_gettime(clocks[clock_index], &child_ts_old, raw_syscall))
 		return -1;
 
 	child_ts_new.tv_nsec = child_ts_old.tv_nsec;
 	child_ts_new.tv_sec = child_ts_old.tv_sec + TEN_DAYS_IN_SEC;
 
-	if (clock_settime(clocks[clock_index], &child_ts_new)) {
-		pr_perror("clock_settime(%s)", clock_names[clock_index]);
+	if (_settime(clocks[clock_index], &child_ts_new, raw_syscall))
 		return -1;
-	}
 
 	if (switch_ns(parent_ns)) {
 		pr_err("switch_ns(%d)", parent_ns);
 		return -1;
 	}
 
-	if (_gettime(clocks[clock_index], &parent_ts))
+	if (_gettime(clocks[clock_index], &parent_ts, raw_syscall))
 		return -1;
 
 	if (parent_ts.tv_sec > child_ts_old.tv_sec + DAY_IN_SEC) {
@@ -171,7 +201,9 @@ int main(int argc, char *argv[])
 		return 1;
 
 	for (i = 0; i < ARRAY_SIZE(clocks); i++) {
-		if (test_gettime(i))
+		if (test_gettime(i, true))
+			return 1;
+		if (test_gettime(i, false))
 			return 1;
 	}
 
