@@ -10,6 +10,7 @@
 #include <sys/types.h>
 #include <time.h>
 #include <unistd.h>
+#include <time.h>
 
 #ifndef CLONE_NEWTIME
 # define CLONE_NEWTIME	0x00001000
@@ -49,9 +50,10 @@
 	ct(CLOCK_MONOTONIC_COARSE),					\
 	ct(CLOCK_MONOTONIC_RAW),					\
 	ct(CLOCK_BOOTTIME),						\
-//	TODO: API to set CPUTIME
-//	ct(CLOCK_PROCESS_CPUTIME_ID),					\
-//	ct(CLOCK_THREAD_CPUTIME_ID),
+/*	TODO: API to set CPUTIME
+	ct(CLOCK_PROCESS_CPUTIME_ID),					\
+	ct(CLOCK_THREAD_CPUTIME_ID),
+*/
 
 #define ct(clock)	clock
 static clockid_t clocks[] = {
@@ -140,7 +142,7 @@ static int _settime(clockid_t clk_id, struct timespec *res, bool raw_syscall)
 
 	if (!raw_syscall) {
 		if (clock_settime(clk_id, res)) {
-			pr_perror("clock_settime(%s)", (int)clk_id);
+			pr_perror("clock_settime(%d)", (int)clk_id);
 			return -1;
 		}
 		return 0;
@@ -156,7 +158,7 @@ static int _settime(clockid_t clk_id, struct timespec *res, bool raw_syscall)
 static int test_gettime(unsigned clock_index, bool raw_syscall)
 {
 	struct timespec child_ts_old, child_ts_new;
-	struct timespec parent_ts;
+	struct timespec cur_ts;
 
 	if (switch_ns(child_ns)) {
 		pr_err("switch_ns(%d)", child_ns);
@@ -172,20 +174,30 @@ static int test_gettime(unsigned clock_index, bool raw_syscall)
 	if (_settime(clocks[clock_index], &child_ts_new, raw_syscall))
 		return -1;
 
+	if (_gettime(clocks[clock_index], &cur_ts, !raw_syscall))
+		return -1;
+
+	if (difftime(cur_ts.tv_sec, child_ts_old.tv_sec + TEN_DAYS_IN_SEC) < 0) {
+		pr_fail("Child's %s time has not changed: %lu -> %lu",
+			clock_names[clock_index],
+			child_ts_old.tv_sec, cur_ts.tv_sec);
+		return -1;
+	}
+
 	if (switch_ns(parent_ns)) {
 		pr_err("switch_ns(%d)", parent_ns);
 		return -1;
 	}
 
-	if (_gettime(clocks[clock_index], &parent_ts, raw_syscall))
+	if (_gettime(clocks[clock_index], &cur_ts, raw_syscall))
 		return -1;
 
-	if (parent_ts.tv_sec > child_ts_old.tv_sec + DAY_IN_SEC) {
+	if (difftime(cur_ts.tv_sec, child_ts_old.tv_sec + DAY_IN_SEC) > 0) {
 		pr_fail("Parent's %s time has changed: %lu -> %lu",
 			clock_names[clock_index],
-			child_ts_old.tv_sec, parent_ts.tv_sec);
+			child_ts_old.tv_sec, cur_ts.tv_sec);
 		/* Let's play nice and put it closer to original */
-		clock_settime(clocks[clock_index], &parent_ts);
+		clock_settime(clocks[clock_index], &cur_ts);
 		return -1;
 	}
 
