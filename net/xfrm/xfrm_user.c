@@ -33,6 +33,34 @@
 #endif
 #include <asm/unaligned.h>
 
+struct xfrm_usersa_info_packed {
+	struct xfrm_selector		sel;
+	struct xfrm_id			id;
+	xfrm_address_t			saddr;
+	struct xfrm_lifetime_cfg	lft;
+	struct xfrm_lifetime_cur	curlft;
+	struct xfrm_stats		stats;
+	__u32				seq;
+	__u32				reqid;
+	__u16				family;
+	__u8				mode;		/* XFRM_MODE_xxx */
+	__u8				replay_window;
+	__u8				flags;
+	__u8				__pad[3];
+} __packed;
+
+struct xfrm_userpolicy_info_packed {
+	struct xfrm_selector		sel;
+	struct xfrm_lifetime_cfg	lft;
+	struct xfrm_lifetime_cur	curlft;
+	__u32				priority;
+	__u32				index;
+	__u8				dir;
+	__u8				action;
+	__u8				flags;
+	__u8				share;
+} __packed;
+
 static int verify_one_alg(struct nlattr **attrs, enum xfrm_attr_type_t type)
 {
 	struct nlattr *rt = attrs[type];
@@ -115,7 +143,7 @@ static inline int verify_sec_ctx_len(struct nlattr **attrs)
 	return 0;
 }
 
-static inline int verify_replay(struct xfrm_usersa_info *p,
+static inline int verify_replay(struct xfrm_usersa_info_packed *p,
 				struct nlattr **attrs)
 {
 	struct nlattr *rt = attrs[XFRMA_REPLAY_ESN_VAL];
@@ -143,7 +171,7 @@ static inline int verify_replay(struct xfrm_usersa_info *p,
 	return 0;
 }
 
-static int verify_newsa_info(struct xfrm_usersa_info *p,
+static int verify_newsa_info(struct xfrm_usersa_info_packed *p,
 			     struct nlattr **attrs)
 {
 	int err;
@@ -464,7 +492,8 @@ static inline unsigned int xfrm_user_sec_ctx_size(struct xfrm_sec_ctx *xfrm_ctx)
 	return len;
 }
 
-static void copy_from_user_state(struct xfrm_state *x, struct xfrm_usersa_info *p)
+static void copy_from_user_state(struct xfrm_state *x,
+				 struct xfrm_usersa_info_packed *p)
 {
 	memcpy(&x->id, &p->id, sizeof(x->id));
 	memcpy(&x->sel, &p->sel, sizeof(x->sel));
@@ -528,9 +557,8 @@ static void xfrm_update_ae_params(struct xfrm_state *x, struct nlattr **attrs,
 }
 
 static struct xfrm_state *xfrm_state_construct(struct net *net,
-					       struct xfrm_usersa_info *p,
-					       struct nlattr **attrs,
-					       int *errp)
+	       struct xfrm_usersa_info_packed *p,
+	       struct nlattr **attrs, int *errp)
 {
 	struct xfrm_state *x = xfrm_state_alloc(net);
 	int err = -ENOMEM;
@@ -630,7 +658,7 @@ static int xfrm_add_sa(struct sk_buff *skb, struct nlmsghdr *nlh,
 		struct nlattr **attrs)
 {
 	struct net *net = sock_net(skb->sk);
-	struct xfrm_usersa_info *p = nlmsg_data(nlh);
+	struct xfrm_usersa_info_packed *p = nlmsg_data(nlh);
 	struct xfrm_state *x;
 	int err;
 	struct km_event c;
@@ -1333,7 +1361,7 @@ static int verify_policy_type(u8 type)
 	return 0;
 }
 
-static int verify_newpolicy_info(struct xfrm_userpolicy_info *p)
+static int verify_newpolicy_info(struct xfrm_userpolicy_info_packed *p)
 {
 	int ret;
 
@@ -1515,7 +1543,8 @@ static int copy_from_user_policy_type(u8 *tp, struct nlattr **attrs)
 	return 0;
 }
 
-static void copy_from_user_policy(struct xfrm_policy *xp, struct xfrm_userpolicy_info *p)
+static void copy_from_user_policy(struct xfrm_policy *xp,
+		struct xfrm_userpolicy_info_packed *p)
 {
 	xp->priority = p->priority;
 	xp->index = p->index;
@@ -1542,7 +1571,9 @@ static void copy_to_user_policy(struct xfrm_policy *xp, struct xfrm_userpolicy_i
 	p->share = XFRM_SHARE_ANY; /* XXX xp->share */
 }
 
-static struct xfrm_policy *xfrm_policy_construct(struct net *net, struct xfrm_userpolicy_info *p, struct nlattr **attrs, int *errp)
+static struct xfrm_policy *xfrm_policy_construct(struct net *net,
+		struct xfrm_userpolicy_info_packed *p,
+		struct nlattr **attrs, int *errp)
 {
 	struct xfrm_policy *xp = xfrm_policy_alloc(net, GFP_KERNEL);
 	int err;
@@ -1577,7 +1608,7 @@ static int xfrm_add_policy(struct sk_buff *skb, struct nlmsghdr *nlh,
 		struct nlattr **attrs)
 {
 	struct net *net = sock_net(skb->sk);
-	struct xfrm_userpolicy_info *p = nlmsg_data(nlh);
+	struct xfrm_userpolicy_info_packed *p = nlmsg_data(nlh);
 	struct xfrm_policy *xp;
 	struct km_event c;
 	int err;
@@ -2083,7 +2114,7 @@ static int xfrm_add_pol_expire(struct sk_buff *skb, struct nlmsghdr *nlh,
 	struct net *net = sock_net(skb->sk);
 	struct xfrm_policy *xp;
 	struct xfrm_user_polexpire *up = nlmsg_data(nlh);
-	struct xfrm_userpolicy_info *p = &up->pol;
+	struct xfrm_userpolicy_info_packed *p = (void *)&up->pol;
 	u8 type = XFRM_POLICY_TYPE_MAIN;
 	int err = -ENOENT;
 	struct xfrm_mark m;
@@ -2144,7 +2175,7 @@ static int xfrm_add_sa_expire(struct sk_buff *skb, struct nlmsghdr *nlh,
 	struct xfrm_state *x;
 	int err;
 	struct xfrm_user_expire *ue = nlmsg_data(nlh);
-	struct xfrm_usersa_info *p = &ue->state;
+	struct xfrm_usersa_info_packed *p = (struct xfrm_usersa_info_packed *)&ue->state;
 	struct xfrm_mark m;
 	u32 mark = xfrm_mark_get(attrs, &m);
 
@@ -2182,6 +2213,7 @@ static int xfrm_add_acquire(struct sk_buff *skb, struct nlmsghdr *nlh,
 	struct xfrm_mark mark;
 
 	struct xfrm_user_acquire *ua = nlmsg_data(nlh);
+	struct xfrm_userpolicy_info_packed *upi = (void *)&ua->policy;
 	struct xfrm_state *x = xfrm_state_alloc(net);
 	int err = -ENOMEM;
 
@@ -2190,12 +2222,12 @@ static int xfrm_add_acquire(struct sk_buff *skb, struct nlmsghdr *nlh,
 
 	xfrm_mark_get(attrs, &mark);
 
-	err = verify_newpolicy_info(&ua->policy);
+	err = verify_newpolicy_info(upi);
 	if (err)
 		goto free_state;
 
 	/*   build an XP */
-	xp = xfrm_policy_construct(net, &ua->policy, attrs, &err);
+	xp = xfrm_policy_construct(net, upi, attrs, &err);
 	if (!xp)
 		goto free_state;
 
@@ -2885,10 +2917,20 @@ static struct xfrm_policy *xfrm_compile_policy(struct sock *sk, int opt,
 					       u8 *data, int len, int *dir)
 {
 	struct net *net = sock_net(sk);
-	struct xfrm_userpolicy_info *p = (struct xfrm_userpolicy_info *)data;
-	struct xfrm_user_tmpl *ut = (struct xfrm_user_tmpl *) (p + 1);
+	struct xfrm_userpolicy_info *upi = (void *)data;
+	struct xfrm_userpolicy_info_packed *_upi = (void *)data;
+	size_t policy_size;
+	struct xfrm_user_tmpl *ut;
 	struct xfrm_policy *xp;
 	int nr;
+
+	if (in_compat_syscall()) {
+		ut = (struct xfrm_user_tmpl *)(_upi + 1);
+		policy_size = sizeof(*_upi);
+	} else {
+		ut = (struct xfrm_user_tmpl *)(upi + 1);
+		policy_size = sizeof(*upi);
+	}
 
 	switch (sk->sk_family) {
 	case AF_INET:
@@ -2912,15 +2954,14 @@ static struct xfrm_policy *xfrm_compile_policy(struct sock *sk, int opt,
 
 	*dir = -EINVAL;
 
-	if (len < sizeof(*p) ||
-	    verify_newpolicy_info(p))
+	if (len < policy_size || verify_newpolicy_info(_upi))
 		return NULL;
 
-	nr = ((len - sizeof(*p)) / sizeof(*ut));
-	if (validate_tmpl(nr, ut, p->sel.family))
+	nr = ((len - policy_size) / sizeof(*ut));
+	if (validate_tmpl(nr, ut, _upi->sel.family))
 		return NULL;
 
-	if (p->dir > XFRM_POLICY_OUT)
+	if (_upi->dir > XFRM_POLICY_OUT)
 		return NULL;
 
 	xp = xfrm_policy_alloc(net, GFP_ATOMIC);
@@ -2929,11 +2970,11 @@ static struct xfrm_policy *xfrm_compile_policy(struct sock *sk, int opt,
 		return NULL;
 	}
 
-	copy_from_user_policy(xp, p);
+	copy_from_user_policy(xp, _upi);
 	xp->type = XFRM_POLICY_TYPE_MAIN;
 	copy_templates(xp, ut, nr);
 
-	*dir = p->dir;
+	*dir = _upi->dir;
 
 	return xp;
 }
