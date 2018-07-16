@@ -61,6 +61,12 @@ struct xfrm_userpolicy_info_packed {
 	__u8				share;
 } __packed;
 
+struct xfrm_userspi_info_packed {
+	struct xfrm_usersa_info_packed	info;
+	__u32				min;
+	__u32				max;
+} __packed;
+
 static int verify_one_alg(struct nlattr **attrs, enum xfrm_attr_type_t type)
 {
 	struct nlattr *rt = attrs[type];
@@ -1281,11 +1287,21 @@ static int xfrm_alloc_userspi(struct sk_buff *skb, struct nlmsghdr *nlh,
 	xfrm_address_t *daddr;
 	int family;
 	int err;
-	u32 mark;
+	u32 mark, spi_min, spi_max;
 	struct xfrm_mark m;
 
 	p = nlmsg_data(nlh);
-	err = verify_spi_info(p->info.id.proto, p->min, p->max);
+	if (in_compat_syscall()) {
+		struct xfrm_userspi_info_packed *_p = nlmsg_data(nlh);
+
+		spi_min = _p->min;
+		spi_max = _p->max;
+	} else {
+		spi_min = p->min;
+		spi_max = p->max;
+	}
+
+	err = verify_spi_info(p->info.id.proto, spi_min, spi_max);
 	if (err)
 		goto out_noput;
 
@@ -1312,7 +1328,7 @@ static int xfrm_alloc_userspi(struct sk_buff *skb, struct nlmsghdr *nlh,
 	if (x == NULL)
 		goto out_noput;
 
-	err = xfrm_alloc_spi(x, p->min, p->max);
+	err = xfrm_alloc_spi(x, spi_min, spi_max);
 	if (err)
 		goto out;
 
