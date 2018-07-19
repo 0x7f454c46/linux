@@ -273,20 +273,19 @@ static void sock_diag_rcv(struct sk_buff *skb)
 	mutex_unlock(&sock_diag_mutex);
 }
 
-static int sock_diag_bind(struct net *net, int group)
+static int sock_diag_bind(struct net *net, unsigned long *groups)
 {
-	switch (group) {
-	case SKNLGRP_INET_TCP_DESTROY:
-	case SKNLGRP_INET_UDP_DESTROY:
-		if (!sock_diag_handlers[AF_INET])
-			sock_load_diag_module(AF_INET, 0);
-		break;
-	case SKNLGRP_INET6_TCP_DESTROY:
-	case SKNLGRP_INET6_UDP_DESTROY:
-		if (!sock_diag_handlers[AF_INET6])
-			sock_load_diag_module(AF_INET6, 0);
-		break;
-	}
+	unsigned long inet_mask, inet6_mask;
+
+	inet_mask   = 1UL << SKNLGRP_INET_TCP_DESTROY;
+	inet_mask  |= 1UL << SKNLGRP_INET_UDP_DESTROY;
+	inet6_mask  = 1UL << SKNLGRP_INET6_TCP_DESTROY;
+	inet6_mask |= 1UL << SKNLGRP_INET6_UDP_DESTROY;
+
+	if ((*groups & inet_mask) && !sock_diag_handlers[AF_INET])
+		sock_load_diag_module(AF_INET, 0);
+	if ((*groups & inet6_mask) && !sock_diag_handlers[AF_INET6])
+		sock_load_diag_module(AF_INET6, 0);
 	return 0;
 }
 

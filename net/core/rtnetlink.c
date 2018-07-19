@@ -4683,15 +4683,13 @@ static void rtnetlink_rcv(struct sk_buff *skb)
 	netlink_rcv_skb(skb, &rtnetlink_rcv_msg);
 }
 
-static int rtnetlink_bind(struct net *net, int group)
+static int rtnetlink_bind(struct net *net, unsigned long *groups)
 {
-	switch (group) {
-	case RTNLGRP_IPV4_MROUTE_R:
-	case RTNLGRP_IPV6_MROUTE_R:
-		if (!ns_capable(net->user_ns, CAP_NET_ADMIN))
-			return -EPERM;
-		break;
-	}
+	unsigned long mroute_r;
+
+	mroute_r = 1UL << RTNLGRP_IPV4_MROUTE_R | 1UL << RTNLGRP_IPV6_MROUTE_R;
+	if ((*groups & mroute_r) && !ns_capable(net->user_ns, CAP_NET_ADMIN))
+		return -EPERM;
 	return 0;
 }
 

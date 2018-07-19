@@ -960,28 +960,38 @@ static struct genl_family genl_ctrl __ro_after_init = {
 	.netnsok = true,
 };
 
-static int genl_bind(struct net *net, int group)
+static int genl_bind(struct net *net, unsigned long *groups)
 {
+	unsigned long mcgrps;
 	struct genl_family *f;
-	int err = -ENOENT;
+	int err = 0;
 	unsigned int id;
 
 	down_read(&cb_lock);
 
 	idr_for_each_entry(&genl_fam_idr, f, id) {
-		if (group >= f->mcgrp_offset &&
-		    group < f->mcgrp_offset + f->n_mcgrps) {
-			int fam_grp = group - f->mcgrp_offset;
+		int fam_grp_bit, fam_grp = -1;
+
+		mcgrps = (1UL << f->n_mcgrps) - 1;
+		mcgrps <<= f->mcgrp_offset;
+		mcgrps &= *groups;
+
+		if (!mcgrps)
+			continue;
+
+		while ((fam_grp_bit = __builtin_ffsl(mcgrps))) {
+			fam_grp += fam_grp_bit;
 
 			if (!f->netnsok && net != &init_net)
 				err = -ENOENT;
 			else if (f->mcast_bind)
 				err = f->mcast_bind(net, fam_grp);
-			else
-				err = 0;
-			break;
+
+			if (err)
+				goto out;
 		}
 	}
+out:
 	up_read(&cb_lock);
 
 	return err;

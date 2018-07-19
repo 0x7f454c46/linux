@@ -669,7 +669,7 @@ static int netlink_create(struct net *net, struct socket *sock, int protocol,
 	struct module *module = NULL;
 	struct mutex *cb_mutex;
 	struct netlink_sock *nlk;
-	int (*bind)(struct net *net, int group);
+	int (*bind)(struct net *net, unsigned long *groups);
 	void (*unbind)(struct net *net, int group);
 	int err = 0;
 
@@ -971,8 +971,7 @@ static int netlink_realloc_groups(struct sock *sk)
 	return err;
 }
 
-static void netlink_undo_bind(int group, long unsigned int groups,
-			      struct sock *sk)
+static void netlink_undo_bind(unsigned long groups, struct sock *sk)
 {
 	struct netlink_sock *nlk = nlk_sk(sk);
 	int undo;
@@ -980,7 +979,7 @@ static void netlink_undo_bind(int group, long unsigned int groups,
 	if (!nlk->netlink_unbind)
 		return;
 
-	for (undo = 0; undo < group; undo++)
+	for (undo = 0; undo < nlk->ngroups; undo++)
 		if (test_bit(undo, &groups))
 			nlk->netlink_unbind(sock_net(sk), undo + 1);
 }
@@ -993,7 +992,7 @@ static int netlink_bind(struct socket *sock, struct sockaddr *addr,
 	struct netlink_sock *nlk = nlk_sk(sk);
 	struct sockaddr_nl *nladdr = (struct sockaddr_nl *)addr;
 	int err = 0;
-	long unsigned int groups = nladdr->nl_groups;
+	unsigned long groups = nladdr->nl_groups;
 	bool bound;
 
 	if (addr_len < sizeof(struct sockaddr_nl))
@@ -1027,17 +1026,9 @@ static int netlink_bind(struct socket *sock, struct sockaddr *addr,
 
 	netlink_lock_table();
 	if (nlk->netlink_bind && groups) {
-		int group;
-
-		for (group = 0; group < nlk->ngroups; group++) {
-			if (!test_bit(group, &groups))
-				continue;
-			err = nlk->netlink_bind(net, group + 1);
-			if (!err)
-				continue;
-			netlink_undo_bind(group, groups, sk);
+		err = nlk->netlink_bind(net, &groups);
+		if (err)
 			goto unlock;
-		}
 	}
 
 	/* No need for barriers here as we return to user-space without
@@ -1048,7 +1039,7 @@ static int netlink_bind(struct socket *sock, struct sockaddr *addr,
 			netlink_insert(sk, nladdr->nl_pid) :
 			netlink_autobind(sock);
 		if (err) {
-			netlink_undo_bind(nlk->ngroups, groups, sk);
+			netlink_undo_bind(groups, sk);
 			goto unlock;
 		}
 	}
@@ -1658,7 +1649,9 @@ static int netlink_setsockopt(struct socket *sock, int level, int optname,
 		if (!val || val - 1 >= nlk->ngroups)
 			return -EINVAL;
 		if (optname == NETLINK_ADD_MEMBERSHIP && nlk->netlink_bind) {
-			err = nlk->netlink_bind(sock_net(sk), val);
+			unsigned long groups = 1UL << val;
+
+			err = nlk->netlink_bind(sock_net(sk), &groups);
 			if (err)
 				return err;
 		}
