@@ -67,6 +67,29 @@ struct xfrm_userspi_info_packed {
 	__u32				max;
 } __packed;
 
+/* In-kernel, non-uapi compat groups.
+ * As compat/native messages differ, send notifications according
+ * to .bind() caller's ABI. There are *_COMPAT hidden from userspace
+ * groups for such task.
+ */
+enum xfrm_nlgroups_kernel {
+	XFRMNLGRP_COMPAT_MIN = XFRMNLGRP_MAX,
+	XFRMNLGRP_COMPAT_ACQUIRE,
+	XFRMNLGRP_COMPAT_EXPIRE,
+	XFRMNLGRP_COMPAT_SA,
+	XFRMNLGRP_COMPAT_POLICY,
+	/* Group messages for the following notifications do not differ
+	 * in size between native and compat structures:
+	 * XFRMNLGRP_AEVENTS,
+	 * XFRMNLGRP_REPORT,
+	 * XFRMNLGRP_MIGRATE,
+	 * XFRMNLGRP_MAPPING,
+	 */
+	__XFRMNLGRP_COMPAT_MAX
+};
+
+#define XFRMNLGRP_KERNEL_MAX	(__XFRMNLGRP_COMPAT_MAX - 1)
+
 static int verify_one_alg(struct nlattr **attrs, enum xfrm_attr_type_t type)
 {
 	struct nlattr *rt = attrs[type];
@@ -2649,6 +2672,34 @@ static void xfrm_netlink_rcv(struct sk_buff *skb)
 	mutex_unlock(&net->xfrm.xfrm_cfg_mutex);
 }
 
+static inline void xfrm_nlgrp_compat(unsigned long *groups,
+		int group, int group_compat)
+{
+	unsigned long group_bit = 1UL << (group - 1);
+
+	if (*groups & group_bit) {
+		*groups &= ~group_bit;
+		*groups |= 1UL << (group_compat - 1);
+	}
+}
+
+static int xfrm_netlink_bind(struct net *net, unsigned long *groups)
+{
+	unsigned long uapi_mask = (1UL << XFRMNLGRP_MAX) - 1;
+
+	*groups &= uapi_mask;
+
+	if (!in_compat_syscall())
+		return 0;
+
+	xfrm_nlgrp_compat(groups, XFRMNLGRP_ACQUIRE, XFRMNLGRP_COMPAT_ACQUIRE);
+	xfrm_nlgrp_compat(groups, XFRMNLGRP_EXPIRE, XFRMNLGRP_COMPAT_EXPIRE);
+	xfrm_nlgrp_compat(groups, XFRMNLGRP_SA, XFRMNLGRP_COMPAT_SA);
+	xfrm_nlgrp_compat(groups, XFRMNLGRP_POLICY, XFRMNLGRP_COMPAT_POLICY);
+
+	return 0;
+}
+
 static inline unsigned int xfrm_expire_msgsize(void)
 {
 	return NLMSG_ALIGN(sizeof(struct xfrm_user_expire))
@@ -3287,8 +3338,9 @@ static int __net_init xfrm_user_net_init(struct net *net)
 {
 	struct sock *nlsk;
 	struct netlink_kernel_cfg cfg = {
-		.groups	= XFRMNLGRP_MAX,
+		.groups	= XFRMNLGRP_KERNEL_MAX,
 		.input	= xfrm_netlink_rcv,
+		.bind	= xfrm_netlink_bind,
 	};
 
 	nlsk = netlink_kernel_create(net, NETLINK_XFRM, &cfg);
