@@ -799,9 +799,9 @@ out:
 	return err;
 }
 
-static void copy_to_user_state(struct xfrm_state *x, struct xfrm_usersa_info *p)
+static void __copy_to_user_state(struct xfrm_state *x,
+		struct xfrm_usersa_info_packed *p)
 {
-	memset(p, 0, sizeof(*p));
 	memcpy(&p->id, &x->id, sizeof(p->id));
 	memcpy(&p->sel, &x->sel, sizeof(p->sel));
 	memcpy(&p->lft, &x->lft, sizeof(p->lft));
@@ -818,11 +818,25 @@ static void copy_to_user_state(struct xfrm_state *x, struct xfrm_usersa_info *p)
 	p->seq = x->km.seq;
 }
 
+static void copy_to_user_state(struct xfrm_state *x, struct xfrm_usersa_info *p)
+{
+	memset(p, 0, sizeof(*p));
+	__copy_to_user_state(x, (struct xfrm_usersa_info_packed *)p);
+}
+
+static void copy_to_user_state_compat(struct xfrm_state *x,
+		struct xfrm_usersa_info_packed *p)
+{
+	memset(p, 0, sizeof(*p));
+	__copy_to_user_state(x, p);
+}
+
 struct xfrm_dump_info {
 	struct sk_buff *in_skb;
 	struct sk_buff *out_skb;
 	u32 nlmsg_seq;
 	u16 nlmsg_flags;
+	bool compat_dump;
 };
 
 static int copy_sec_ctx(struct xfrm_sec_ctx *s, struct sk_buff *skb)
@@ -882,13 +896,9 @@ static int copy_to_user_auth(struct xfrm_algo_auth *auth, struct sk_buff *skb)
 }
 
 /* Don't change this without updating xfrm_sa_len! */
-static int copy_to_user_state_extra(struct xfrm_state *x,
-				    struct xfrm_usersa_info *p,
-				    struct sk_buff *skb)
+static int __copy_to_user_state_extra(struct xfrm_state *x, struct sk_buff *skb)
 {
 	int ret = 0;
-
-	copy_to_user_state(x, p);
 
 	if (x->props.extra_flags) {
 		ret = nla_put_u32(skb, XFRMA_SA_EXTRA_FLAGS,
@@ -968,23 +978,42 @@ out:
 	return ret;
 }
 
+static int copy_to_user_state_extra(struct xfrm_state *x,
+		struct xfrm_usersa_info *p, struct sk_buff *skb)
+{
+	copy_to_user_state(x, p);
+	return __copy_to_user_state_extra(x, skb);
+}
+
+static int copy_to_user_state_extra_compat(struct xfrm_state *x,
+		struct xfrm_usersa_info_packed *p, struct sk_buff *skb)
+{
+	copy_to_user_state_compat(x, p);
+	return __copy_to_user_state_extra(x, skb);
+}
+
 static int dump_one_state(struct xfrm_state *x, int count, void *ptr)
 {
 	struct xfrm_dump_info *sp = ptr;
 	struct sk_buff *in_skb = sp->in_skb;
 	struct sk_buff *skb = sp->out_skb;
-	struct xfrm_usersa_info *p;
 	struct nlmsghdr *nlh;
+	size_t msg_len;
 	int err;
 
+	if (sp->compat_dump)
+		msg_len = sizeof(struct xfrm_usersa_info_packed);
+	else
+		msg_len = sizeof(struct xfrm_usersa_info);
 	nlh = nlmsg_put(skb, NETLINK_CB(in_skb).portid, sp->nlmsg_seq,
-			XFRM_MSG_NEWSA, sizeof(*p), sp->nlmsg_flags);
+			XFRM_MSG_NEWSA, msg_len, sp->nlmsg_flags);
 	if (nlh == NULL)
 		return -EMSGSIZE;
 
-	p = nlmsg_data(nlh);
-
-	err = copy_to_user_state_extra(x, p, skb);
+	if (sp->compat_dump)
+		err = copy_to_user_state_extra_compat(x, nlmsg_data(nlh), skb);
+	else
+		err = copy_to_user_state_extra(x, nlmsg_data(nlh), skb);
 	if (err) {
 		nlmsg_cancel(skb, nlh);
 		return err;
@@ -1018,6 +1047,7 @@ static int xfrm_dump_sa(struct sk_buff *skb, struct netlink_callback *cb)
 	info.out_skb = skb;
 	info.nlmsg_seq = cb->nlh->nlmsg_seq;
 	info.nlmsg_flags = NLM_F_MULTI;
+	info.compat_dump = in_compat_syscall();
 
 	if (!cb->args[0]) {
 		struct nlattr *attrs[XFRMA_MAX+1];
@@ -1064,6 +1094,7 @@ static struct sk_buff *xfrm_state_netlink(struct sk_buff *in_skb,
 	info.out_skb = skb;
 	info.nlmsg_seq = seq;
 	info.nlmsg_flags = 0;
+	info.compat_dump = in_compat_syscall();
 
 	err = dump_one_state(x, 0, &info);
 	if (err) {
