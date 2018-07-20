@@ -2860,18 +2860,24 @@ static inline unsigned int xfrm_sa_len(struct xfrm_state *x)
 	return l;
 }
 
-static int xfrm_notify_sa(struct xfrm_state *x, const struct km_event *c)
+static int __xfrm_notify_sa(struct xfrm_state *x,
+		const struct km_event *c, bool compat)
 {
 	struct net *net = xs_net(x);
-	struct xfrm_usersa_info *p;
 	struct xfrm_usersa_id *id;
 	struct nlmsghdr *nlh;
 	struct sk_buff *skb;
 	unsigned int len = xfrm_sa_len(x);
-	unsigned int headlen;
+	unsigned int headlen, usersa_info_size;
+	void *usersa_info;
 	int err;
 
-	headlen = sizeof(*p);
+	if (compat)
+		usersa_info_size = sizeof(struct xfrm_usersa_info_packed);
+	else
+		usersa_info_size = sizeof(struct xfrm_usersa_info);
+	headlen = usersa_info_size;
+
 	if (c->event == XFRM_MSG_DELSA) {
 		len += nla_total_size(headlen);
 		headlen = sizeof(*id);
@@ -2888,7 +2894,7 @@ static int xfrm_notify_sa(struct xfrm_state *x, const struct km_event *c)
 	if (nlh == NULL)
 		goto out_free_skb;
 
-	p = nlmsg_data(nlh);
+	usersa_info = nlmsg_data(nlh);
 	if (c->event == XFRM_MSG_DELSA) {
 		struct nlattr *attr;
 
@@ -2899,24 +2905,38 @@ static int xfrm_notify_sa(struct xfrm_state *x, const struct km_event *c)
 		id->family = x->props.family;
 		id->proto = x->id.proto;
 
-		attr = nla_reserve(skb, XFRMA_SA, sizeof(*p));
+		attr = nla_reserve(skb, XFRMA_SA, usersa_info_size);
 		err = -EMSGSIZE;
 		if (attr == NULL)
 			goto out_free_skb;
 
-		p = nla_data(attr);
+		usersa_info = nla_data(attr);
 	}
-	err = copy_to_user_state_extra(x, p, skb);
+
+	if (compat)
+		err = copy_to_user_state_extra(x, usersa_info, skb);
+	else
+		err = copy_to_user_state_extra_compat(x, usersa_info, skb);
 	if (err)
 		goto out_free_skb;
 
 	nlmsg_end(skb, nlh);
 
-	return xfrm_nlmsg_multicast(net, skb, 0, XFRMNLGRP_SA);
+	return xfrm_nlmsg_multicast(net, skb, 0,
+			compat ? XFRMNLGRP_COMPAT_SA : XFRMNLGRP_SA);
 
 out_free_skb:
 	kfree_skb(skb);
 	return err;
+}
+
+static int xfrm_notify_sa(struct xfrm_state *x, const struct km_event *c)
+{
+	int ret = __xfrm_notify_sa(x, c, false);
+
+	if ((ret && ret != -ESRCH) || !IS_ENABLED(CONFIG_COMPAT))
+		return ret;
+	return __xfrm_notify_sa(x, c, true);
 }
 
 static int xfrm_send_state_notify(struct xfrm_state *x, const struct km_event *c)
