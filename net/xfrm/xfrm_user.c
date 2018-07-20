@@ -67,6 +67,12 @@ struct xfrm_userspi_info_packed {
 	__u32				max;
 } __packed;
 
+struct xfrm_user_expire_packed {
+	struct xfrm_usersa_info_packed	state;
+	__u8				hard;
+	__u8				__pad[3];
+} __packed;
+
 /* In-kernel, non-uapi compat groups.
  * As compat/native messages differ, send notifications according
  * to .bind() caller's ABI. There are *_COMPAT hidden from userspace
@@ -2244,10 +2250,19 @@ static int xfrm_add_sa_expire(struct sk_buff *skb, struct nlmsghdr *nlh,
 	struct net *net = sock_net(skb->sk);
 	struct xfrm_state *x;
 	int err;
-	struct xfrm_user_expire *ue = nlmsg_data(nlh);
-	struct xfrm_usersa_info_packed *p = (struct xfrm_usersa_info_packed *)&ue->state;
+	struct xfrm_user_expire_packed *ue = nlmsg_data(nlh);
+	struct xfrm_usersa_info_packed *p = &ue->state;
 	struct xfrm_mark m;
 	u32 mark = xfrm_mark_get(attrs, &m);
+	u8 hard;
+
+	if (in_compat_syscall()) {
+		hard = ue->hard;
+	} else {
+		struct xfrm_user_expire *expire = nlmsg_data(nlh);
+
+		hard = expire->hard;
+	}
 
 	x = xfrm_state_lookup(net, mark, &p->id.daddr, p->id.spi, p->id.proto, p->family);
 
@@ -2259,9 +2274,9 @@ static int xfrm_add_sa_expire(struct sk_buff *skb, struct nlmsghdr *nlh,
 	err = -EINVAL;
 	if (x->km.state != XFRM_STATE_VALID)
 		goto out;
-	km_state_expired(x, ue->hard, nlh->nlmsg_pid);
+	km_state_expired(x, hard, nlh->nlmsg_pid);
 
-	if (ue->hard) {
+	if (hard) {
 		__xfrm_state_delete(x);
 		xfrm_audit_state_delete(x, 1, true);
 	}
@@ -2731,33 +2746,49 @@ static int xfrm_netlink_bind(struct net *net, unsigned long *groups)
 	return 0;
 }
 
-static inline unsigned int xfrm_expire_msgsize(void)
+static int build_expire(struct sk_buff **skb, struct xfrm_state *x,
+		const struct km_event *c, bool compat)
 {
-	return NLMSG_ALIGN(sizeof(struct xfrm_user_expire))
-	       + nla_total_size(sizeof(struct xfrm_mark));
-}
-
-static int build_expire(struct sk_buff *skb, struct xfrm_state *x, const struct km_event *c)
-{
-	struct xfrm_user_expire *ue;
 	struct nlmsghdr *nlh;
+	unsigned int ue_sz;
 	int err;
 
-	nlh = nlmsg_put(skb, c->portid, 0, XFRM_MSG_EXPIRE, sizeof(*ue), 0);
-	if (nlh == NULL)
+	if (compat)
+		ue_sz = NLMSG_ALIGN(sizeof(struct xfrm_user_expire_packed));
+	else
+		ue_sz = NLMSG_ALIGN(sizeof(struct xfrm_user_expire));
+
+	*skb = nlmsg_new(ue_sz + nla_total_size(sizeof(struct xfrm_mark)), GFP_ATOMIC);
+	if (*skb == NULL)
+		return -ENOMEM;
+
+	nlh = nlmsg_put(*skb, c->portid, 0, XFRM_MSG_EXPIRE, ue_sz, 0);
+	if (nlh == NULL) {
+		kfree_skb(*skb);
 		return -EMSGSIZE;
+	}
 
-	ue = nlmsg_data(nlh);
-	copy_to_user_state(x, &ue->state);
-	ue->hard = (c->data.hard != 0) ? 1 : 0;
-	/* clear the padding bytes */
-	memset(&ue->hard + 1, 0, sizeof(*ue) - offsetofend(typeof(*ue), hard));
+	if (compat) {
+		struct xfrm_user_expire_packed *ue = nlmsg_data(nlh);
 
-	err = xfrm_mark_put(skb, &x->mark);
-	if (err)
+		copy_to_user_state_compat(x, &ue->state);
+		ue->hard = (c->data.hard != 0) ? 1 : 0;
+	} else {
+		struct xfrm_user_expire *ue = nlmsg_data(nlh);
+
+		copy_to_user_state(x, &ue->state);
+		ue->hard = (c->data.hard != 0) ? 1 : 0;
+		/* clear the padding bytes */
+		memset(&ue->hard + 1, 0, sizeof(*ue) - offsetofend(typeof(*ue), hard));
+	}
+
+	err = xfrm_mark_put(*skb, &x->mark);
+	if (err) {
+		kfree_skb(*skb);
 		return err;
+	}
 
-	nlmsg_end(skb, nlh);
+	nlmsg_end(*skb, nlh);
 	return 0;
 }
 
@@ -2765,17 +2796,21 @@ static int xfrm_exp_state_notify(struct xfrm_state *x, const struct km_event *c)
 {
 	struct net *net = xs_net(x);
 	struct sk_buff *skb;
+	int err;
 
-	skb = nlmsg_new(xfrm_expire_msgsize(), GFP_ATOMIC);
-	if (skb == NULL)
-		return -ENOMEM;
+	err = build_expire(&skb, x, c, false);
+	if (err)
+		return err;
 
-	if (build_expire(skb, x, c) < 0) {
-		kfree_skb(skb);
-		return -EMSGSIZE;
-	}
+	err = xfrm_nlmsg_multicast(net, skb, 0, XFRMNLGRP_EXPIRE);
+	if ((err && err != -ESRCH) || !IS_ENABLED(CONFIG_COMPAT))
+		return err;
 
-	return xfrm_nlmsg_multicast(net, skb, 0, XFRMNLGRP_EXPIRE);
+	err = build_expire(&skb, x, c, true);
+	if (err)
+		return err;
+
+	return xfrm_nlmsg_multicast(net, skb, 0, XFRMNLGRP_COMPAT_EXPIRE);
 }
 
 static int xfrm_aevent_state_notify(struct xfrm_state *x, const struct km_event *c)
