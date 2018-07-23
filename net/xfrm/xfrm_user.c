@@ -73,6 +73,17 @@ struct xfrm_user_expire_packed {
 	__u8				__pad[3];
 } __packed;
 
+struct xfrm_user_acquire_packed {
+	struct xfrm_id				id;
+	xfrm_address_t				saddr;
+	struct xfrm_selector			sel;
+	struct xfrm_userpolicy_info_packed	policy;
+	__u32					aalgos;
+	__u32					ealgos;
+	__u32					calgos;
+	__u32					seq;
+} __packed;
+
 /* In-kernel, non-uapi compat groups.
  * As compat/native messages differ, send notifications according
  * to .bind() caller's ABI. There are *_COMPAT hidden from userspace
@@ -2320,8 +2331,8 @@ static int xfrm_add_acquire(struct sk_buff *skb, struct nlmsghdr *nlh,
 	struct nlattr *rt = attrs[XFRMA_TMPL];
 	struct xfrm_mark mark;
 
-	struct xfrm_user_acquire *ua = nlmsg_data(nlh);
-	struct xfrm_userpolicy_info_packed *upi = (void *)&ua->policy;
+	struct xfrm_user_acquire_packed *ua = nlmsg_data(nlh);
+	struct xfrm_user_acquire *_ua = nlmsg_data(nlh);
 	struct xfrm_state *x = xfrm_state_alloc(net);
 	int err = -ENOMEM;
 
@@ -2330,12 +2341,12 @@ static int xfrm_add_acquire(struct sk_buff *skb, struct nlmsghdr *nlh,
 
 	xfrm_mark_get(attrs, &mark);
 
-	err = verify_newpolicy_info(upi);
+	err = verify_newpolicy_info(&ua->policy);
 	if (err)
 		goto free_state;
 
 	/*   build an XP */
-	xp = xfrm_policy_construct(net, upi, attrs, &err);
+	xp = xfrm_policy_construct(net, &ua->policy, attrs, &err);
 	if (!xp)
 		goto free_state;
 
@@ -2352,9 +2363,15 @@ static int xfrm_add_acquire(struct sk_buff *skb, struct nlmsghdr *nlh,
 		x->props.mode = t->mode;
 		x->props.reqid = t->reqid;
 		x->props.family = ut->family;
-		t->aalgos = ua->aalgos;
-		t->ealgos = ua->ealgos;
-		t->calgos = ua->calgos;
+		if (in_compat_syscall()) {
+			t->aalgos = ua->aalgos;
+			t->ealgos = ua->ealgos;
+			t->calgos = ua->calgos;
+		} else {
+			t->aalgos = _ua->aalgos;
+			t->ealgos = _ua->ealgos;
+			t->calgos = _ua->calgos;
+		}
 		err = km_query(x, t, xp);
 
 	}
@@ -3021,25 +3038,32 @@ static int xfrm_send_state_notify(struct xfrm_state *x, const struct km_event *c
 
 }
 
-static inline unsigned int xfrm_acquire_msgsize(struct xfrm_state *x,
-						struct xfrm_policy *xp)
+static int build_acquire(struct sk_buff **skb, struct xfrm_state *x,
+			 struct xfrm_tmpl *xt, struct xfrm_policy *xp,
+			 bool compat)
 {
-	return NLMSG_ALIGN(sizeof(struct xfrm_user_acquire))
+	__u32 seq = xfrm_get_acqseq();
+	struct xfrm_user_acquire_packed *ua;
+	struct nlmsghdr *nlh;
+	unsigned int ua_size, ack_msgsize;
+	int err;
+
+	if (compat)
+		ua_size = NLMSG_ALIGN(sizeof(struct xfrm_user_acquire_packed));
+	else
+		ua_size = NLMSG_ALIGN(sizeof(struct xfrm_user_acquire));
+
+	ack_msgsize = ua_size
 	       + nla_total_size(sizeof(struct xfrm_user_tmpl) * xp->xfrm_nr)
 	       + nla_total_size(sizeof(struct xfrm_mark))
 	       + nla_total_size(xfrm_user_sec_ctx_size(x->security))
 	       + userpolicy_type_attrsize();
-}
 
-static int build_acquire(struct sk_buff *skb, struct xfrm_state *x,
-			 struct xfrm_tmpl *xt, struct xfrm_policy *xp)
-{
-	__u32 seq = xfrm_get_acqseq();
-	struct xfrm_user_acquire *ua;
-	struct nlmsghdr *nlh;
-	int err;
+	*skb = nlmsg_new(ack_msgsize, GFP_ATOMIC);
+	if (*skb == NULL)
+		return -ENOMEM;
 
-	nlh = nlmsg_put(skb, 0, 0, XFRM_MSG_ACQUIRE, sizeof(*ua), 0);
+	nlh = nlmsg_put(*skb, 0, 0, XFRM_MSG_ACQUIRE, ua_size, 0);
 	if (nlh == NULL)
 		return -EMSGSIZE;
 
@@ -3047,25 +3071,36 @@ static int build_acquire(struct sk_buff *skb, struct xfrm_state *x,
 	memcpy(&ua->id, &x->id, sizeof(ua->id));
 	memcpy(&ua->saddr, &x->props.saddr, sizeof(ua->saddr));
 	memcpy(&ua->sel, &x->sel, sizeof(ua->sel));
-	copy_to_user_policy(xp, &ua->policy, XFRM_POLICY_OUT);
-	ua->aalgos = xt->aalgos;
-	ua->ealgos = xt->ealgos;
-	ua->calgos = xt->calgos;
-	ua->seq = x->km.seq = seq;
 
-	err = copy_to_user_tmpl(xp, skb);
+	if (compat) {
+		copy_to_user_policy_compat(xp, &ua->policy, XFRM_POLICY_OUT);
+		ua->aalgos = xt->aalgos;
+		ua->ealgos = xt->ealgos;
+		ua->calgos = xt->calgos;
+		ua->seq = x->km.seq = seq;
+	} else {
+		struct xfrm_user_acquire *_ua = nlmsg_data(nlh);
+
+		copy_to_user_policy(xp, &_ua->policy, XFRM_POLICY_OUT);
+		_ua->aalgos = xt->aalgos;
+		_ua->ealgos = xt->ealgos;
+		_ua->calgos = xt->calgos;
+		_ua->seq = x->km.seq = seq;
+	}
+
+	err = copy_to_user_tmpl(xp, *skb);
 	if (!err)
-		err = copy_to_user_state_sec_ctx(x, skb);
+		err = copy_to_user_state_sec_ctx(x, *skb);
 	if (!err)
-		err = copy_to_user_policy_type(xp->type, skb);
+		err = copy_to_user_policy_type(xp->type, *skb);
 	if (!err)
-		err = xfrm_mark_put(skb, &xp->mark);
+		err = xfrm_mark_put(*skb, &xp->mark);
 	if (err) {
-		nlmsg_cancel(skb, nlh);
+		nlmsg_cancel(*skb, nlh);
 		return err;
 	}
 
-	nlmsg_end(skb, nlh);
+	nlmsg_end(*skb, nlh);
 	return 0;
 }
 
@@ -3076,14 +3111,20 @@ static int xfrm_send_acquire(struct xfrm_state *x, struct xfrm_tmpl *xt,
 	struct sk_buff *skb;
 	int err;
 
-	skb = nlmsg_new(xfrm_acquire_msgsize(x, xp), GFP_ATOMIC);
-	if (skb == NULL)
-		return -ENOMEM;
 
-	err = build_acquire(skb, x, xt, xp);
-	BUG_ON(err < 0);
+	err = build_acquire(&skb, x, xt, xp, false);
+	if (err)
+		return err;
 
-	return xfrm_nlmsg_multicast(net, skb, 0, XFRMNLGRP_ACQUIRE);
+	err = xfrm_nlmsg_multicast(net, skb, 0, XFRMNLGRP_ACQUIRE);
+	if ((err && err != -ESRCH) || !IS_ENABLED(CONFIG_COMPAT))
+		return err;
+
+	err = build_acquire(&skb, x, xt, xp, true);
+	if (err)
+		return err;
+
+	return xfrm_nlmsg_multicast(net, skb, 0, XFRMNLGRP_COMPAT_ACQUIRE);
 }
 
 /* User gives us xfrm_user_policy_info followed by an array of 0
