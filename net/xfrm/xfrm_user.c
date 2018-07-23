@@ -3372,7 +3372,8 @@ static int xfrm_notify_policy(struct xfrm_policy *xp, int dir,
 	return __xfrm_notify_policy(xp, dir, c, true);
 }
 
-static int xfrm_notify_policy_flush(const struct km_event *c)
+static int __xfrm_notify_policy_flush(const struct km_event *c,
+			unsigned int group)
 {
 	struct net *net = c->net;
 	struct nlmsghdr *nlh;
@@ -3393,11 +3394,20 @@ static int xfrm_notify_policy_flush(const struct km_event *c)
 
 	nlmsg_end(skb, nlh);
 
-	return xfrm_nlmsg_multicast(net, skb, 0, XFRMNLGRP_POLICY);
+	return xfrm_nlmsg_multicast(net, skb, 0, group);
 
 out_free_skb:
 	kfree_skb(skb);
 	return err;
+}
+
+static int xfrm_notify_policy_flush(const struct km_event *c)
+{
+	int ret = __xfrm_notify_policy_flush(c, XFRMNLGRP_POLICY);
+
+	if ((ret && ret != -ESRCH) || !IS_ENABLED(CONFIG_COMPAT))
+		return ret;
+	return __xfrm_notify_policy_flush(c, XFRMNLGRP_COMPAT_POLICY);
 }
 
 static int xfrm_send_policy_notify(struct xfrm_policy *xp, int dir, const struct km_event *c)
