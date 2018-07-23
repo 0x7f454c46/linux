@@ -2883,7 +2883,7 @@ static int xfrm_aevent_state_notify(struct xfrm_state *x, const struct km_event 
 	return xfrm_nlmsg_multicast(net, skb, 0, XFRMNLGRP_AEVENTS);
 }
 
-static int xfrm_notify_sa_flush(const struct km_event *c)
+static int __xfrm_notify_sa_flush(const struct km_event *c, unsigned int group)
 {
 	struct net *net = c->net;
 	struct xfrm_usersa_flush *p;
@@ -2906,7 +2906,16 @@ static int xfrm_notify_sa_flush(const struct km_event *c)
 
 	nlmsg_end(skb, nlh);
 
-	return xfrm_nlmsg_multicast(net, skb, 0, XFRMNLGRP_SA);
+	return xfrm_nlmsg_multicast(net, skb, 0, group);
+}
+
+static int xfrm_notify_sa_flush(const struct km_event *c)
+{
+	int ret = __xfrm_notify_sa_flush(c, XFRMNLGRP_SA);
+
+	if ((ret && ret != -ESRCH) || !IS_ENABLED(CONFIG_COMPAT))
+		return ret;
+	return __xfrm_notify_sa_flush(c, XFRMNLGRP_COMPAT_SA);
 }
 
 static inline unsigned int xfrm_sa_len(struct xfrm_state *x)
