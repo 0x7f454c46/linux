@@ -84,6 +84,12 @@ struct xfrm_user_acquire_packed {
 	__u32					seq;
 } __packed;
 
+struct xfrm_user_polexpire_packed {
+	struct xfrm_userpolicy_info_packed	pol;
+	__u8					hard;
+	__u8					__pad[3];
+} __packed;
+
 /* In-kernel, non-uapi compat groups.
  * As compat/native messages differ, send notifications according
  * to .bind() caller's ABI. There are *_COMPAT hidden from userspace
@@ -2229,7 +2235,15 @@ static int xfrm_add_pol_expire(struct sk_buff *skb, struct nlmsghdr *nlh,
 	int err = -ENOENT;
 	struct xfrm_mark m;
 	u32 mark = xfrm_mark_get(attrs, &m);
+	u8 hard;
 
+	if (in_compat_syscall()) {
+		struct xfrm_user_polexpire_packed *_up = nlmsg_data(nlh);
+
+		hard = _up->hard;
+	} else {
+		hard = up->hard;
+	}
 	err = copy_from_user_policy_type(&type, attrs);
 	if (err)
 		return err;
@@ -2267,11 +2281,11 @@ static int xfrm_add_pol_expire(struct sk_buff *skb, struct nlmsghdr *nlh,
 		goto out;
 
 	err = 0;
-	if (up->hard) {
+	if (hard) {
 		xfrm_policy_delete(xp, p->dir);
 		xfrm_audit_policy_delete(xp, 1, true);
 	}
-	km_policy_expired(xp, p->dir, up->hard, nlh->nlmsg_pid);
+	km_policy_expired(xp, p->dir, hard, nlh->nlmsg_pid);
 
 out:
 	xfrm_pol_put(xp);
@@ -3196,43 +3210,59 @@ static struct xfrm_policy *xfrm_compile_policy(struct sock *sk, int opt,
 	return xp;
 }
 
-static inline unsigned int xfrm_polexpire_msgsize(struct xfrm_policy *xp)
+static int build_polexpire(struct sk_buff **skb, struct xfrm_policy *xp,
+			   int dir, const struct km_event *c, bool compat)
 {
-	return NLMSG_ALIGN(sizeof(struct xfrm_user_polexpire))
-	       + nla_total_size(sizeof(struct xfrm_user_tmpl) * xp->xfrm_nr)
-	       + nla_total_size(xfrm_user_sec_ctx_size(xp->security))
-	       + nla_total_size(sizeof(struct xfrm_mark))
-	       + userpolicy_type_attrsize();
-}
-
-static int build_polexpire(struct sk_buff *skb, struct xfrm_policy *xp,
-			   int dir, const struct km_event *c)
-{
+	struct xfrm_user_polexpire_packed *_upe;
 	struct xfrm_user_polexpire *upe;
+	unsigned int upe_size, polexpire_msgsize;
 	int hard = c->data.hard;
 	struct nlmsghdr *nlh;
 	int err;
 
-	nlh = nlmsg_put(skb, c->portid, 0, XFRM_MSG_POLEXPIRE, sizeof(*upe), 0);
+	if (compat)
+		upe_size = NLMSG_ALIGN(sizeof(struct xfrm_user_polexpire_packed));
+	else
+		upe_size = NLMSG_ALIGN(sizeof(struct xfrm_user_polexpire));
+	polexpire_msgsize = upe_size
+	       + nla_total_size(sizeof(struct xfrm_user_tmpl) * xp->xfrm_nr)
+	       + nla_total_size(xfrm_user_sec_ctx_size(xp->security))
+	       + nla_total_size(sizeof(struct xfrm_mark))
+	       + userpolicy_type_attrsize();
+
+	*skb = nlmsg_new(polexpire_msgsize, GFP_ATOMIC);
+	if (*skb == NULL)
+		return -ENOMEM;
+
+	nlh = nlmsg_put(*skb, c->portid, 0, XFRM_MSG_POLEXPIRE, upe_size, 0);
 	if (nlh == NULL)
 		return -EMSGSIZE;
 
+	_upe = nlmsg_data(nlh);
 	upe = nlmsg_data(nlh);
-	copy_to_user_policy(xp, &upe->pol, dir);
-	err = copy_to_user_tmpl(xp, skb);
+	if (compat)
+		copy_to_user_policy_compat(xp, &_upe->pol, dir);
+	else
+		copy_to_user_policy(xp, &upe->pol, dir);
+
+	err = copy_to_user_tmpl(xp, *skb);
 	if (!err)
-		err = copy_to_user_sec_ctx(xp, skb);
+		err = copy_to_user_sec_ctx(xp, *skb);
 	if (!err)
-		err = copy_to_user_policy_type(xp->type, skb);
+		err = copy_to_user_policy_type(xp->type, *skb);
 	if (!err)
-		err = xfrm_mark_put(skb, &xp->mark);
+		err = xfrm_mark_put(*skb, &xp->mark);
 	if (err) {
-		nlmsg_cancel(skb, nlh);
+		nlmsg_cancel(*skb, nlh);
 		return err;
 	}
-	upe->hard = !!hard;
 
-	nlmsg_end(skb, nlh);
+	if (compat)
+		_upe->hard = !!hard;
+	else
+		upe->hard = !!hard;
+
+	nlmsg_end(*skb, nlh);
 	return 0;
 }
 
@@ -3242,14 +3272,17 @@ static int xfrm_exp_policy_notify(struct xfrm_policy *xp, int dir, const struct 
 	struct sk_buff *skb;
 	int err;
 
-	skb = nlmsg_new(xfrm_polexpire_msgsize(xp), GFP_ATOMIC);
-	if (skb == NULL)
-		return -ENOMEM;
+	err = build_polexpire(&skb, xp, dir, c, false);
+	if (err)
+		return err;
+	err = xfrm_nlmsg_multicast(net, skb, 0, XFRMNLGRP_EXPIRE);
+	if ((err && err != -ESRCH) || !IS_ENABLED(CONFIG_COMPAT))
+		return err;
 
-	err = build_polexpire(skb, xp, dir, c);
-	BUG_ON(err < 0);
-
-	return xfrm_nlmsg_multicast(net, skb, 0, XFRMNLGRP_EXPIRE);
+	err = build_polexpire(&skb, xp, dir, c, true);
+	if (err)
+		return err;
+	return xfrm_nlmsg_multicast(net, skb, 0, XFRMNLGRP_COMPAT_EXPIRE);
 }
 
 static int __xfrm_notify_policy(struct xfrm_policy *xp, int dir,
