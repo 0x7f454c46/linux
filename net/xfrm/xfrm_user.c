@@ -1632,9 +1632,9 @@ static void copy_from_user_policy(struct xfrm_policy *xp,
 	/* XXX xp->share = p->share; */
 }
 
-static void copy_to_user_policy(struct xfrm_policy *xp, struct xfrm_userpolicy_info *p, int dir)
+static void __copy_to_user_policy(struct xfrm_policy *xp,
+		struct xfrm_userpolicy_info_packed *p, int dir)
 {
-	memset(p, 0, sizeof(*p));
 	memcpy(&p->sel, &xp->selector, sizeof(p->sel));
 	memcpy(&p->lft, &xp->lft, sizeof(p->lft));
 	memcpy(&p->curlft, &xp->curlft, sizeof(p->curlft));
@@ -1645,6 +1645,20 @@ static void copy_to_user_policy(struct xfrm_policy *xp, struct xfrm_userpolicy_i
 	p->action = xp->action;
 	p->flags = xp->flags;
 	p->share = XFRM_SHARE_ANY; /* XXX xp->share */
+}
+
+static void copy_to_user_policy(struct xfrm_policy *xp,
+		struct xfrm_userpolicy_info *p, int dir)
+{
+	memset(p, 0, sizeof(*p));
+	__copy_to_user_policy(xp, (struct xfrm_userpolicy_info_packed *)p, dir);
+}
+
+static void copy_to_user_policy_compat(struct xfrm_policy *xp,
+		struct xfrm_userpolicy_info_packed *p, int dir)
+{
+	memset(p, 0, sizeof(*p));
+	__copy_to_user_policy(xp, p, dir);
 }
 
 static struct xfrm_policy *xfrm_policy_construct(struct net *net,
@@ -1799,19 +1813,26 @@ static inline int copy_to_user_policy_type(u8 type, struct sk_buff *skb)
 static int dump_one_policy(struct xfrm_policy *xp, int dir, int count, void *ptr)
 {
 	struct xfrm_dump_info *sp = ptr;
-	struct xfrm_userpolicy_info *p;
 	struct sk_buff *in_skb = sp->in_skb;
 	struct sk_buff *skb = sp->out_skb;
 	struct nlmsghdr *nlh;
+	size_t msg_len;
 	int err;
 
+	if (sp->compat_dump)
+		msg_len = sizeof(struct xfrm_userpolicy_info_packed);
+	else
+		msg_len = sizeof(struct xfrm_userpolicy_info);
 	nlh = nlmsg_put(skb, NETLINK_CB(in_skb).portid, sp->nlmsg_seq,
-			XFRM_MSG_NEWPOLICY, sizeof(*p), sp->nlmsg_flags);
+			XFRM_MSG_NEWPOLICY, msg_len, sp->nlmsg_flags);
 	if (nlh == NULL)
 		return -EMSGSIZE;
 
-	p = nlmsg_data(nlh);
-	copy_to_user_policy(xp, p, dir);
+	if (sp->compat_dump)
+		copy_to_user_policy_compat(xp, nlmsg_data(nlh), dir);
+	else
+		copy_to_user_policy(xp, nlmsg_data(nlh), dir);
+
 	err = copy_to_user_tmpl(xp, skb);
 	if (!err)
 		err = copy_to_user_sec_ctx(xp, skb);
@@ -1856,6 +1877,7 @@ static int xfrm_dump_policy(struct sk_buff *skb, struct netlink_callback *cb)
 	info.out_skb = skb;
 	info.nlmsg_seq = cb->nlh->nlmsg_seq;
 	info.nlmsg_flags = NLM_F_MULTI;
+	info.compat_dump = in_compat_syscall();
 
 	(void) xfrm_policy_walk(net, walk, dump_one_policy, &info);
 
@@ -1878,6 +1900,7 @@ static struct sk_buff *xfrm_policy_netlink(struct sk_buff *in_skb,
 	info.out_skb = skb;
 	info.nlmsg_seq = seq;
 	info.nlmsg_flags = 0;
+	info.compat_dump = in_compat_syscall();
 
 	err = dump_one_policy(xp, dir, 0, &info);
 	if (err) {
@@ -3188,18 +3211,24 @@ static int xfrm_exp_policy_notify(struct xfrm_policy *xp, int dir, const struct 
 	return xfrm_nlmsg_multicast(net, skb, 0, XFRMNLGRP_EXPIRE);
 }
 
-static int xfrm_notify_policy(struct xfrm_policy *xp, int dir, const struct km_event *c)
+static int __xfrm_notify_policy(struct xfrm_policy *xp, int dir,
+		const struct km_event *c, bool compat)
 {
 	unsigned int len = nla_total_size(sizeof(struct xfrm_user_tmpl) * xp->xfrm_nr);
+	unsigned int headlen, upi_size;
 	struct net *net = xp_net(xp);
-	struct xfrm_userpolicy_info *p;
 	struct xfrm_userpolicy_id *id;
+	void *userpolicy_info;
 	struct nlmsghdr *nlh;
 	struct sk_buff *skb;
-	unsigned int headlen;
 	int err;
 
-	headlen = sizeof(*p);
+	if (compat)
+		upi_size = sizeof(struct xfrm_userpolicy_info_packed);
+	else
+		upi_size = sizeof(struct xfrm_userpolicy_info);
+	headlen = upi_size;
+
 	if (c->event == XFRM_MSG_DELPOLICY) {
 		len += nla_total_size(headlen);
 		headlen = sizeof(*id);
@@ -3217,7 +3246,7 @@ static int xfrm_notify_policy(struct xfrm_policy *xp, int dir, const struct km_e
 	if (nlh == NULL)
 		goto out_free_skb;
 
-	p = nlmsg_data(nlh);
+	userpolicy_info = nlmsg_data(nlh);
 	if (c->event == XFRM_MSG_DELPOLICY) {
 		struct nlattr *attr;
 
@@ -3229,15 +3258,18 @@ static int xfrm_notify_policy(struct xfrm_policy *xp, int dir, const struct km_e
 		else
 			memcpy(&id->sel, &xp->selector, sizeof(id->sel));
 
-		attr = nla_reserve(skb, XFRMA_POLICY, sizeof(*p));
+		attr = nla_reserve(skb, XFRMA_POLICY, upi_size);
 		err = -EMSGSIZE;
 		if (attr == NULL)
 			goto out_free_skb;
 
-		p = nla_data(attr);
+		userpolicy_info = nla_data(attr);
 	}
 
-	copy_to_user_policy(xp, p, dir);
+	if (compat)
+		copy_to_user_policy_compat(xp, userpolicy_info, dir);
+	else
+		copy_to_user_policy(xp, userpolicy_info, dir);
 	err = copy_to_user_tmpl(xp, skb);
 	if (!err)
 		err = copy_to_user_policy_type(xp->type, skb);
@@ -3248,11 +3280,22 @@ static int xfrm_notify_policy(struct xfrm_policy *xp, int dir, const struct km_e
 
 	nlmsg_end(skb, nlh);
 
-	return xfrm_nlmsg_multicast(net, skb, 0, XFRMNLGRP_POLICY);
+	return xfrm_nlmsg_multicast(net, skb, 0, compat ?
+			XFRMNLGRP_COMPAT_POLICY : XFRMNLGRP_POLICY);
 
 out_free_skb:
 	kfree_skb(skb);
 	return err;
+}
+
+static int xfrm_notify_policy(struct xfrm_policy *xp, int dir,
+		const struct km_event *c)
+{
+	int ret = __xfrm_notify_policy(xp, dir, c, false);
+
+	if ((ret && ret != -ESRCH) || !IS_ENABLED(CONFIG_COMPAT))
+		return ret;
+	return __xfrm_notify_policy(xp, dir, c, true);
 }
 
 static int xfrm_notify_policy_flush(const struct km_event *c)
