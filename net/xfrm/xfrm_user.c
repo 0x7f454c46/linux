@@ -3521,6 +3521,22 @@ static int xfrm_send_mapping(struct xfrm_state *x, xfrm_address_t *ipaddr,
 	return xfrm_nlmsg_multicast(net, skb, 0, XFRMNLGRP_MAPPING);
 }
 
+static inline int xfrm_acquire_is_on(struct net *net)
+{
+	struct sock *nlsk;
+	int ret = 0;
+
+	rcu_read_lock();
+	nlsk = rcu_dereference(net->xfrm.nlsk);
+	if (nlsk)
+		ret = netlink_has_listeners(nlsk, XFRMNLGRP_ACQUIRE);
+	if (!ret || IS_ENABLED(CONFIG_COMPAT))
+		ret = netlink_has_listeners(nlsk, XFRMNLGRP_COMPAT_ACQUIRE);
+	rcu_read_unlock();
+
+	return ret;
+}
+
 static bool xfrm_is_alive(const struct km_event *c)
 {
 	return (bool)xfrm_acquire_is_on(c->net);
