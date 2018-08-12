@@ -26,6 +26,7 @@
 #include <linux/syscalls.h>
 #include <linux/compat.h>
 #include <linux/rcupdate.h>
+#include <linux/time_namespace.h>
 
 struct timerfd_ctx {
 	union {
@@ -179,6 +180,8 @@ static int timerfd_setup(struct timerfd_ctx *ctx, int flags,
 	htmode = (flags & TFD_TIMER_ABSTIME) ?
 		HRTIMER_MODE_ABS: HRTIMER_MODE_REL;
 
+	htmode |= HRTIMER_MODE_NS;
+
 	texp = timespec64_to_ktime(ktmr->it_value);
 	ctx->expired = 0;
 	ctx->ticks = 0;
@@ -197,9 +200,10 @@ static int timerfd_setup(struct timerfd_ctx *ctx, int flags,
 
 	if (texp != 0) {
 		if (isalarm(ctx)) {
-			if (flags & TFD_TIMER_ABSTIME)
+			if (flags & TFD_TIMER_ABSTIME) {
+				texp = timens_ktime_to_host(clockid, texp);
 				alarm_start(&ctx->t.alarm, texp);
-			else
+			} else
 				alarm_start_relative(&ctx->t.alarm, texp);
 		} else {
 			hrtimer_start(&ctx->t.tmr, texp, htmode);
