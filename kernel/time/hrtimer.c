@@ -42,6 +42,7 @@
 #include <linux/timer.h>
 #include <linux/freezer.h>
 #include <linux/compat.h>
+#include <linux/time_namespace.h>
 
 #include <linux/uaccess.h>
 
@@ -1069,6 +1070,8 @@ static int __hrtimer_start_range_ns(struct hrtimer *timer, ktime_t tim,
 
 	if (mode & HRTIMER_MODE_REL)
 		tim = ktime_add_safe(tim, base->get_time());
+	else if (mode & HRTIMER_MODE_NS)
+		tim = timens_ktime_to_host(base->clockid, tim);
 
 	tim = hrtimer_update_lowres(timer, tim, mode);
 

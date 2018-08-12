@@ -56,6 +56,41 @@ static inline void timens_add_boottime(struct timespec64 *ts)
                 *ts = timespec64_add(*ts, ns_offsets->monotonic_boottime_offset);
 }
 
+static inline ktime_t timens_ktime_to_host(clockid_t clockid, ktime_t tim)
+{
+	struct timens_offsets *ns_offsets = current->nsproxy->time_ns->offsets;
+	struct timespec64 *offset;
+	ktime_t koff;
+
+	if (!ns_offsets)
+		return tim;
+
+	switch (clockid) {
+		case CLOCK_MONOTONIC:
+		case CLOCK_MONOTONIC_RAW:
+		case CLOCK_MONOTONIC_COARSE:
+			offset = &ns_offsets->monotonic_time_offset;
+			break;
+		case CLOCK_BOOTTIME:
+		case CLOCK_BOOTTIME_ALARM:
+			offset = &ns_offsets->monotonic_boottime_offset;
+			break;
+		default:
+			return tim;
+	}
+
+	koff = timespec64_to_ktime(*offset);
+	if (tim < koff)
+		tim = 0;
+	else if (KTIME_MAX - tim < -koff)
+		tim = KTIME_MAX;
+	else
+		tim = ktime_sub(tim, koff);
+
+	return tim;
+}
+
+
 #else
 static inline struct time_namespace *get_time_ns(struct time_namespace *ns)
 {
@@ -82,6 +117,11 @@ static inline int timens_on_fork(struct nsproxy *nsproxy, struct task_struct *ts
 
 static inline void timens_add_monotonic(struct timespec64 *ts) {}
 static inline void timens_add_boottime(struct timespec64 *ts) {}
+
+static inline ktime_t timens_ktime_to_host(clockid_t clockid, ktime_t tim)
+{
+	return tim;
+}
 #endif
 
 #endif /* _LINUX_TIMENS_H */
