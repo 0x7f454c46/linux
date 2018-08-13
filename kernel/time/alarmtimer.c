@@ -816,6 +816,8 @@ static int alarm_timer_nsleep(const clockid_t which_clock, int flags,
 		ktime_t now = alarm_bases[type].gettime();
 
 		exp = ktime_add_safe(now, exp);
+	} else {
+		exp = timens_ktime_to_host(alarm_bases[type].base_clockid, exp);
 	}
 
 	ret = alarmtimer_do_nsleep(&alarm, exp, type);
