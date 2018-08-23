@@ -803,6 +803,8 @@ static void common_hrtimer_arm(struct k_itimer *timr, ktime_t expires,
 
 	if (!absolute)
 		expires = ktime_add_safe(expires, timer->base->get_time());
+	else
+		expires = timens_ktime_to_host(timer->base->clockid, expires);
 	hrtimer_set_expires(timer, expires);
 
 	if (!sigev_none)
