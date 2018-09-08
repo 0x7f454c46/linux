@@ -30,6 +30,7 @@
 #include <linux/hashtable.h>
 #include <linux/compat.h>
 #include <linux/nospec.h>
+#include <linux/time_namespace.h>
 
 #include "timekeeping.h"
 #include "posix-timers.h"
@@ -190,6 +191,8 @@ static int posix_clock_realtime_adj(const clockid_t which_clock,
 static int posix_ktime_get_ts(clockid_t which_clock, struct timespec64 *tp)
 {
 	ktime_get_ts64(tp);
+	if (which_clock & CLOCK_TIMENS)
+		timens_add_monotonic(tp);
 	return 0;
 }
 
@@ -199,6 +202,8 @@ static int posix_ktime_get_ts(clockid_t which_clock, struct timespec64 *tp)
 static int posix_get_monotonic_raw(clockid_t which_clock, struct timespec64 *tp)
 {
 	ktime_get_raw_ts64(tp);
+	if (which_clock & CLOCK_TIMENS)
+		timens_add_monotonic(tp);
 	return 0;
 }
 
@@ -213,6 +218,8 @@ static int posix_get_monotonic_coarse(clockid_t which_clock,
 						struct timespec64 *tp)
 {
 	ktime_get_coarse_ts64(tp);
+	if (which_clock & CLOCK_TIMENS)
+		timens_add_monotonic(tp);
 	return 0;
 }
 
@@ -1039,7 +1046,7 @@ SYSCALL_DEFINE2(clock_gettime, const clockid_t, which_clock,
 	if (!kc)
 		return -EINVAL;
 
-	error = kc->clock_get(which_clock, &kernel_tp);
+	error = kc->clock_get(which_clock | CLOCK_TIMENS, &kernel_tp);
 
 	if (!error && put_timespec64(&kernel_tp, tp))
 		error = -EFAULT;
@@ -1121,7 +1128,7 @@ SYSCALL_DEFINE2(clock_gettime32, clockid_t, which_clock,
 	if (!kc)
 		return -EINVAL;
 
-	err = kc->clock_get(which_clock, &ts);
+	err = kc->clock_get(which_clock | CLOCK_TIMENS, &ts);
 
 	if (!err && put_old_timespec32(&ts, tp))
 		err = -EFAULT;
