@@ -65,6 +65,8 @@ struct itimerval {
 #define CLOCKS_MASK			(CLOCK_REALTIME | CLOCK_MONOTONIC)
 #define CLOCKS_MONO			CLOCK_MONOTONIC
 
+#define CLOCK_TIMENS			1024
+
 /*
  * The various flags for setting POSIX.1b interval timers:
  */
