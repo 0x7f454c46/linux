@@ -653,12 +653,18 @@ static int alarm_clock_getres(const clockid_t which_clock, struct timespec64 *tp
  */
 static int alarm_clock_get(clockid_t which_clock, struct timespec64 *tp)
 {
-	struct alarm_base *base = &alarm_bases[clock2alarm(which_clock)];
+	struct alarm_base *base;
+
+	base = &alarm_bases[clock2alarm(which_clock & ~CLOCK_TIMENS)];
 
 	if (!alarmtimer_get_rtcdev())
 		return -EINVAL;
 
 	*tp = ktime_to_timespec64(base->gettime());
+
+	if (which_clock == (CLOCK_BOOTTIME_ALARM | CLOCK_TIMENS))
+		timens_add_boottime(tp);
+
 	return 0;
 }
 
