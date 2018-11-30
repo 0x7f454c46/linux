@@ -92,14 +92,8 @@ fail:
 struct time_namespace *copy_time_ns(unsigned long flags,
 	struct user_namespace *user_ns, struct time_namespace *old_ns)
 {
-	int ret;
-
 	if (!(flags & CLONE_NEWTIME))
 		return get_time_ns(old_ns);
-
-	ret = vvar_purge_timens(current);
-	if (ret)
-		return ERR_PTR(ret);
 
 	return clone_time_ns(user_ns, old_ns);
 }
@@ -137,6 +131,22 @@ static struct ns_common *timens_get(struct task_struct *task)
 	return ns ? &ns->ns : NULL;
 }
 
+static struct ns_common *timens_for_children_get(struct task_struct *task)
+{
+	struct time_namespace *ns = NULL;
+	struct nsproxy *nsproxy;
+
+	task_lock(task);
+	nsproxy = task->nsproxy;
+	if (nsproxy) {
+		ns = nsproxy->time_ns_for_children;
+		get_time_ns(ns);
+	}
+	task_unlock(task);
+
+	return ns ? &ns->ns : NULL;
+}
+
 static void timens_put(struct ns_common *ns)
 {
 	put_time_ns(to_time_ns(ns));
@@ -156,8 +166,11 @@ static int timens_install(struct nsproxy *nsproxy, struct ns_common *new)
 		return ret;
 
 	get_time_ns(ns);
+	get_time_ns(ns);
 	put_time_ns(nsproxy->time_ns);
+	put_time_ns(nsproxy->time_ns_for_children);
 	nsproxy->time_ns = ns;
+	nsproxy->time_ns_for_children = ns;
 	return 0;
 }
 
@@ -214,8 +227,17 @@ const struct proc_ns_operations timens_operations = {
 	.owner		= timens_owner,
 };
 
+const struct proc_ns_operations timens_for_children_operations = {
+	.name		= "time_for_children",
+	.type		= CLONE_NEWTIME,
+	.get		= timens_for_children_get,
+	.put		= timens_put,
+	.install	= timens_install,
+	.owner		= timens_owner,
+};
+
 struct time_namespace init_time_ns = {
-	.kref = KREF_INIT(2),
+	.kref = KREF_INIT(3),
 	.user_ns = &init_user_ns,
 	.ns.inum = PROC_UTS_INIT_INO,
 #ifdef CONFIG_UTS_NS

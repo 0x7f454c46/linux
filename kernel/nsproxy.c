@@ -47,6 +47,7 @@ struct nsproxy init_nsproxy = {
 #endif
 #ifdef CONFIG_TIME_NS
 	.time_ns		= &init_time_ns,
+	.time_ns_for_children	= &init_time_ns,
 #endif
 };
 
@@ -114,7 +115,16 @@ static struct nsproxy *create_new_namespaces(unsigned long flags,
 		goto out_net;
 	}
 
-	new_nsp->time_ns = copy_time_ns(flags, user_ns, tsk->nsproxy->time_ns);
+	new_nsp->time_ns = get_time_ns(tsk->nsproxy->time_ns_for_children);
+	if (tsk == current &&
+	    tsk->nsproxy->time_ns_for_children != tsk->nsproxy->time_ns) {
+		err = vvar_purge_timens(current);
+		if (err)
+			goto out_time;
+	}
+
+	new_nsp->time_ns_for_children = copy_time_ns(flags, user_ns,
+						tsk->nsproxy->time_ns_for_children);
 	if (IS_ERR(new_nsp->time_ns)) {
 		err = PTR_ERR(new_nsp->time_ns);
 		goto out_time;
@@ -194,6 +204,8 @@ void free_nsproxy(struct nsproxy *ns)
 		put_pid_ns(ns->pid_ns_for_children);
 	if (ns->time_ns)
 		put_time_ns(ns->time_ns);
+	if (ns->time_ns)
+		put_time_ns(ns->time_ns_for_children);
 	put_cgroup_ns(ns->cgroup_ns);
 	put_net(ns->net_ns);
 	kmem_cache_free(nsproxy_cachep, ns);

@@ -35,6 +35,7 @@ static const struct proc_ns_operations *ns_entries[] = {
 #endif
 #ifdef CONFIG_TIME_NS
 	&timens_operations,
+	&timens_for_children_operations,
 #endif
 };
 

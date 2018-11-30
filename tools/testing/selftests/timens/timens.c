@@ -44,7 +44,7 @@ static char *clock_names[] = {
 	CLOCK_TYPES
 };
 
-static int child_ns, parent_ns;
+static int child_ns, parent_ns = -1;
 
 static int switch_ns(int fd)
 {
@@ -58,12 +58,14 @@ static int switch_ns(int fd)
 
 static int init_namespaces(void)
 {
-	char path[] = "/proc/self/ns/time";
+	char path[] = "/proc/self/ns/time_for_children";
 	struct stat st1, st2;
 
-	parent_ns = open(path, O_RDONLY);
-	if (parent_ns <= 0)
-		return pr_perror("Unable to open %s", path);
+	if (parent_ns == -1) { 
+		parent_ns = open(path, O_RDONLY);
+		if (parent_ns <= 0)
+			return pr_perror("Unable to open %s", path);
+	}
 
 	if (fstat(parent_ns, &st1))
 		return pr_perror("Unable to stat the parent timens");
@@ -139,14 +141,17 @@ static int test_gettime(clockid_t clock_index, bool raw_syscall, time_t offset)
 	if (_gettime(clocks[clock_index], &parent_ts_old, raw_syscall))
 		return -1;
 
-	if (switch_ns(child_ns))
-		return pr_err("switch_ns(%d)", child_ns);
-
 	child_ts_new.tv_nsec = parent_ts_old.tv_nsec;
 	child_ts_new.tv_sec = parent_ts_old.tv_sec + offset;
 
+	if (init_namespaces())
+		return 1;
+
 	if (_settime(clocks[clock_index], &child_ts_new, raw_syscall))
 		return -1;
+
+	if (switch_ns(child_ns))
+		return pr_err("switch_ns(%d)", child_ns);
 
 	if (_gettime(clocks[clock_index], &cur_ts, raw_syscall))
 		return -1;
