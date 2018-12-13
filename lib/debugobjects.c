@@ -368,13 +368,14 @@ static void debug_object_is_on_stack(void *addr, int onstack)
 	WARN_ON(1);
 }
 
-static void
-__debug_object_init(void *addr, struct debug_obj_descr *descr, int onstack)
+static bool
+__debug_object_init(void *addr, struct debug_obj_descr *descr)
 {
 	enum debug_obj_state state;
 	struct debug_bucket *db;
 	struct debug_obj *obj;
 	unsigned long flags;
+	bool allocated = false;
 
 	fill_pool();
 
@@ -389,9 +390,9 @@ __debug_object_init(void *addr, struct debug_obj_descr *descr, int onstack)
 			debug_objects_enabled = 0;
 			raw_spin_unlock_irqrestore(&db->lock, flags);
 			debug_objects_oom();
-			return;
+			return false;
 		}
-		debug_object_is_on_stack(addr, onstack);
+		allocated = true;
 	}
 
 	switch (obj->state) {
@@ -406,7 +407,7 @@ __debug_object_init(void *addr, struct debug_obj_descr *descr, int onstack)
 		state = obj->state;
 		raw_spin_unlock_irqrestore(&db->lock, flags);
 		debug_object_fixup(descr->fixup_init, addr, state);
-		return;
+		return allocated;
 
 	case ODEBUG_STATE_DESTROYED:
 		debug_print_object(obj, "init");
@@ -416,6 +417,7 @@ __debug_object_init(void *addr, struct debug_obj_descr *descr, int onstack)
 	}
 
 	raw_spin_unlock_irqrestore(&db->lock, flags);
+	return allocated;
 }
 
 /**
@@ -428,7 +430,8 @@ void debug_object_init(void *addr, struct debug_obj_descr *descr)
 	if (!debug_objects_enabled)
 		return;
 
-	__debug_object_init(addr, descr, 0);
+	if (__debug_object_init(addr, descr))
+		debug_object_is_on_stack(addr, 0);
 }
 EXPORT_SYMBOL_GPL(debug_object_init);
 
@@ -443,7 +446,8 @@ void debug_object_init_on_stack(void *addr, struct debug_obj_descr *descr)
 	if (!debug_objects_enabled)
 		return;
 
-	__debug_object_init(addr, descr, 1);
+	if (__debug_object_init(addr, descr))
+		debug_object_is_on_stack(addr, 1);
 }
 EXPORT_SYMBOL_GPL(debug_object_init_on_stack);
 
