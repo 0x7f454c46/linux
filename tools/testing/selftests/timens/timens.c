@@ -11,6 +11,7 @@
 #include <time.h>
 #include <unistd.h>
 #include <time.h>
+#include <string.h>
 
 #include "log.h"
 
@@ -105,21 +106,26 @@ static int _gettime(clockid_t clk_id, struct timespec *res, bool raw_syscall)
 	return err;
 }
 
-static int _settime(clockid_t clk_id, struct timespec *res, bool raw_syscall)
+static int _settime(clockid_t clk_id, time_t offset)
 {
-	int err;
+	int fd, len;
+	char buf[4096];
 
-	if (!raw_syscall) {
-		if (clock_settime(clk_id, res))
-			return pr_perror("clock_settime(%d)", (int)clk_id);
-		return 0;
-	}
+	if (clk_id == CLOCK_MONOTONIC_COARSE || clk_id == CLOCK_MONOTONIC_RAW)
+		clk_id = CLOCK_MONOTONIC;
 
-	err = syscall(SYS_clock_settime, clk_id, res);
-	if (err)
-		pr_perror("syscall(SYS_clock_settime(%d))", (int)clk_id);
+	len = snprintf(buf, sizeof(buf), "%d %ld 0", clk_id, offset);
 
-	return err;
+	fd = open("/proc/self/timens_offsets", O_WRONLY);
+	if (fd < 0)
+		return pr_perror("/proc/self/timens_offsets");
+
+	if (write(fd, buf, len) != len)
+		return pr_perror("/proc/self/timens_offsets");
+
+	close(fd);
+
+	return 0;
 }
 
 static int test_gettime(clockid_t clock_index, bool raw_syscall, time_t offset)
@@ -147,7 +153,7 @@ static int test_gettime(clockid_t clock_index, bool raw_syscall, time_t offset)
 	if (init_namespaces())
 		return 1;
 
-	if (_settime(clocks[clock_index], &child_ts_new, raw_syscall))
+	if (_settime(clocks[clock_index], offset))
 		return -1;
 
 	if (switch_ns(child_ns))

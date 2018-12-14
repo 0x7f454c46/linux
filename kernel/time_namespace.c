@@ -13,6 +13,7 @@
 #include <linux/user_namespace.h>
 #include <linux/proc_ns.h>
 #include <linux/sched/task.h>
+#include <linux/seq_file.h>
 #include <linux/mm.h>
 #include <asm/vdso.h>
 
@@ -33,6 +34,7 @@ static struct time_namespace *create_time_ns(void)
 	time_ns = kmalloc(sizeof(struct time_namespace), GFP_KERNEL);
 	if (time_ns)
 		kref_init(&time_ns->kref);
+	time_ns->initialized = false;
 	return time_ns;
 }
 
@@ -206,6 +208,71 @@ static void clock_timens_fixup(int clockid, struct timespec64 *val, bool to_ns)
 		*val = timespec64_add(*val, *offsets);
 	else
 		*val = timespec64_sub(*val, *offsets);
+}
+
+static void show_offset(struct seq_file *m, int clockid, struct timespec64 *ts)
+{
+	seq_printf(m, "%d %lld %ld\n", clockid, ts->tv_sec, ts->tv_nsec);
+}
+
+void proc_timens_show_offsets(struct task_struct *p, struct seq_file *m)
+{
+	struct ns_common *ns;
+	struct time_namespace *time_ns;
+	struct timens_offsets *ns_offsets;
+
+	ns = timens_for_children_get(p);
+	if (!ns)
+		return;
+	time_ns = to_time_ns(ns);
+
+	if (!time_ns->offsets) {
+		put_time_ns(time_ns);
+		return;
+	}
+	ns_offsets = time_ns->offsets;
+
+	show_offset(m, CLOCK_MONOTONIC, &ns_offsets->monotonic_time_offset);
+	show_offset(m, CLOCK_BOOTTIME, &ns_offsets->monotonic_boottime_offset);
+	put_time_ns(time_ns);
+}
+
+int proc_timens_set_offset(struct task_struct *p,
+			   int clockid, struct timespec64 *val)
+{
+	struct ns_common *ns;
+	struct time_namespace *time_ns;
+	struct timens_offsets *ns_offsets;
+	int err = 0;
+
+	ns = timens_for_children_get(p);
+	if (!ns)
+		return -ESRCH;
+	time_ns = to_time_ns(ns);
+
+	if (!time_ns->offsets || time_ns->initialized ||
+			!ns_capable(time_ns->user_ns, CAP_SYS_TIME)) {
+		put_time_ns(time_ns);
+		return -EPERM;
+	}
+	ns_offsets = time_ns->offsets;
+
+	switch (clockid) {
+	case CLOCK_MONOTONIC:
+		ns_offsets->monotonic_time_offset = *val;
+		break;
+	case CLOCK_BOOTTIME:
+		ns_offsets->monotonic_boottime_offset = *val;
+		break;
+	default:
+		err = -EINVAL;
+		break;
+	}
+	ns_offsets->flags |= TIMENS_USE_OFFSETS;
+
+	put_time_ns(time_ns);
+
+	return err;
 }
 
 void timens_clock_to_host(int clockid, struct timespec64 *val)

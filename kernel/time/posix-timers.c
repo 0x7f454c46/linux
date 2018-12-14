@@ -231,13 +231,14 @@ static void common_timens_adjust(clockid_t which_clock, struct timespec64 *tp)
 static int posix_ktime_set_ts(clockid_t which_clock,
 				const struct timespec64 *tp)
 {
-	struct timens_offsets *ns_offsets = current->nsproxy->time_ns_for_children->offsets;
+	struct time_namespace *timens = current->nsproxy->time_ns_for_children;
+	struct timens_offsets *ns_offsets = timens->offsets;
 	struct timespec64 ktp;
 
 	if (!ns_offsets)
 		return -EINVAL;
 
-	if (!ns_capable(current->nsproxy->time_ns_for_children->user_ns, CAP_SYS_TIME))
+	if (!ns_capable(timens->user_ns, CAP_SYS_TIME) || timens->initialized)
 		return -EPERM;
 
 	ktime_get_ts64(&ktp);
@@ -294,13 +295,14 @@ static int posix_get_boottime(const clockid_t which_clock, struct timespec64 *tp
 
 static int posix_set_boottime(clockid_t which_clock, const struct timespec64 *tp)
 {
-	struct timens_offsets *ns_offsets = current->nsproxy->time_ns_for_children->offsets;
+	struct time_namespace *timens = current->nsproxy->time_ns_for_children;
+	struct timens_offsets *ns_offsets = timens->offsets;
 	struct timespec64 ktp;
 
 	if (!ns_offsets)
 		return -EINVAL;
 
-	if (!ns_capable(current->nsproxy->time_ns_for_children->user_ns, CAP_SYS_TIME))
+	if (!ns_capable(timens->user_ns, CAP_SYS_TIME) || timens->initialized)
 		return -EPERM;
 
 	ktime_get_boottime_ts64(&ktp);

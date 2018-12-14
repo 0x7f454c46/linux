@@ -116,6 +116,7 @@ static struct nsproxy *create_new_namespaces(unsigned long flags,
 	}
 
 	new_nsp->time_ns = get_time_ns(tsk->nsproxy->time_ns_for_children);
+	new_nsp->time_ns->initialized = true;
 	if (tsk == current &&
 	    tsk->nsproxy->time_ns_for_children != tsk->nsproxy->time_ns) {
 		err = vvar_purge_timens(current);
