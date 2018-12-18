@@ -1521,7 +1521,6 @@ static int timens_offsets_show(struct seq_file *m, void *v)
 	return 0;
 }
 
-
 static ssize_t
 timens_offsets_write(struct file *file, const char __user *buf,
 	    size_t count, loff_t *offset)

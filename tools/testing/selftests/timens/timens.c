@@ -62,7 +62,7 @@ static int init_namespaces(void)
 	char path[] = "/proc/self/ns/time_for_children";
 	struct stat st1, st2;
 
-	if (parent_ns == -1) { 
+	if (parent_ns == -1) {
 		parent_ns = open(path, O_RDONLY);
 		if (parent_ns <= 0)
 			return pr_perror("Unable to open %s", path);

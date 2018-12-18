@@ -39,11 +39,11 @@ static inline void put_time_ns(struct time_namespace *ns)
 	kref_put(&ns->kref, free_time_ns);
 }
 
-void timens_clock_to_host(int clockid, struct timespec64 *val);
-void timens_clock_from_host(int clockid, struct timespec64 *val);
-void proc_timens_show_offsets(struct task_struct *p, struct seq_file *m);
-int proc_timens_set_offset(struct task_struct *p,
-			   int clockid, struct timespec64 *val);
+extern void timens_clock_to_host(int clockid, struct timespec64 *val);
+extern void timens_clock_from_host(int clockid, struct timespec64 *val);
+extern void proc_timens_show_offsets(struct task_struct *p, struct seq_file *m);
+extern int proc_timens_set_offset(struct task_struct *p,
+				  int clockid, struct timespec64 *val);
 
 #else
 static inline void get_time_ns(struct time_namespace *ns)
