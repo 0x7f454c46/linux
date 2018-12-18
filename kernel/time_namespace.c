@@ -32,9 +32,10 @@ static struct time_namespace *create_time_ns(void)
 	struct time_namespace *time_ns;
 
 	time_ns = kmalloc(sizeof(struct time_namespace), GFP_KERNEL);
-	if (time_ns)
+	if (time_ns) {
 		kref_init(&time_ns->kref);
-	time_ns->initialized = false;
+		time_ns->initialized = false;
+	}
 	return time_ns;
 }
 
