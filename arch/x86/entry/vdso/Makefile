@@ -19,6 +19,8 @@ VDSO32-$(CONFIG_IA32_EMULATION)	:= y
 # files to link into the vdso
 vobjs64-y := vdso-note.o vclock_gettime.o vgetcpu.o
 vobjs32-y := vdso32.lds vclock_gettime.o note.o system_call.o sigreturn.o
+vobjs64-timens-y := $(subst vclock_gettime.o,vclock_gettime-timens.o,$(vobjs64-y))
+vobjs32-timens-y := $(subst vclock_gettime.o,vclock_gettime-timens.o,$(vobjs32-y))
 
 # files to link into kernel
 obj-y				+= vma.o
@@ -29,15 +31,21 @@ vdso_img-$(VDSO64-y)		+= 64
 vdso_img-$(VDSOX32-y)		+= x32
 vdso_img-$(VDSO32-y)		+= 32
 
+vdso_timens_img-$(VDSO64-y)	+= 64-timens
+vdso_timens_img-$(VDSO32-y)	+= 32-timens
+vdso_img-$(CONFIG_TIME_NS)	+= $(vdso_timens_img-y)
+
 obj-$(VDSO32-y)			+= vdso32-setup.o
 
 vobjs64 := $(foreach F,$(vobjs64-y),$(obj)/$F)
 vobjs32 := $(foreach F,$(vobjs32-y),$(obj)/vdso32/$F)
+vobjs64-timens := $(foreach F,$(vobjs64-timens-y),$(obj)/$F)
+vobjs32-timens := $(foreach F,$(vobjs32-timens-y),$(obj)/vdso32/$F)
 
 $(obj)/vdso.o: $(obj)/vdso.so
 
-targets += vdso.lds $(vobjs64-y)
-targets += vdso32/vdso.lds $(vobjs32-y)
+targets += vdso.lds $(vobjs64-y) $(vobjs64-timens-y)
+targets += vdso32/vdso.lds $(vobjs32-y) $(vobjs32-timens-y)
 
 # Build the vDSO image C files and link them in.
 vdso_img_objs := $(vdso_img-y:%=vdso-image-%.o)
@@ -51,6 +59,9 @@ CPPFLAGS_vdso.lds += -P -C
 
 VDSO_LDFLAGS_vdso.lds = -m elf_x86_64 -soname linux-vdso.so.1 --no-undefined \
 			-z max-page-size=4096 -z common-page-size=4096
+
+$(obj)/vdso64-timens.so.dbg: $(obj)/vdso.lds $(vobjs64-timens) FORCE
+	$(call if_changed,vdso)
 
 $(obj)/vdso64.so.dbg: $(obj)/vdso.lds $(vobjs64) FORCE
 	$(call if_changed,vdso)
@@ -74,12 +85,14 @@ CFL := $(PROFILING) -mcmodel=small -fPIC -O2 -fasynchronous-unwind-tables -m64 \
        -DDISABLE_BRANCH_PROFILING -DBUILD_VDSO $(RETPOLINE_VDSO_CFLAGS)
 
 $(vobjs64): KBUILD_CFLAGS := $(filter-out $(GCC_PLUGINS_CFLAGS) $(RETPOLINE_CFLAGS),$(KBUILD_CFLAGS)) $(CFL)
+$(vobjs64-timens): KBUILD_CFLAGS := $(filter-out $(GCC_PLUGINS_CFLAGS) $(RETPOLINE_CFLAGS),$(KBUILD_CFLAGS)) $(CFL)
 
 #
 # vDSO code runs in userspace and -pg doesn't help with profiling anyway.
 #
 CFLAGS_REMOVE_vdso-note.o = -pg
 CFLAGS_REMOVE_vclock_gettime.o = -pg
+CFLAGS_REMOVE_vclock_gettime-timens.o = -pg
 CFLAGS_REMOVE_vgetcpu.o = -pg
 CFLAGS_REMOVE_vvar.o = -pg
 
@@ -125,6 +138,8 @@ VDSO_LDFLAGS_vdso32.lds = -m elf_i386 -soname linux-gate.so.1
 KBUILD_AFLAGS_32 := $(filter-out -m64,$(KBUILD_AFLAGS)) -DBUILD_VDSO
 $(obj)/vdso32.so.dbg: KBUILD_AFLAGS = $(KBUILD_AFLAGS_32)
 $(obj)/vdso32.so.dbg: asflags-$(CONFIG_X86_64) += -m32
+$(obj)/vdso32-timens.so.dbg: KBUILD_AFLAGS = $(KBUILD_AFLAGS_32)
+$(obj)/vdso32-timens.so.dbg: asflags-$(CONFIG_X86_64) += -m32
 
 KBUILD_CFLAGS_32 := $(filter-out -m64,$(KBUILD_CFLAGS))
 KBUILD_CFLAGS_32 := $(filter-out -mcmodel=kernel,$(KBUILD_CFLAGS_32))
@@ -139,6 +154,10 @@ KBUILD_CFLAGS_32 += -fno-omit-frame-pointer
 KBUILD_CFLAGS_32 += -DDISABLE_BRANCH_PROFILING
 KBUILD_CFLAGS_32 += $(RETPOLINE_VDSO_CFLAGS)
 $(obj)/vdso32.so.dbg: KBUILD_CFLAGS = $(KBUILD_CFLAGS_32)
+$(obj)/vdso32-timens.so.dbg: KBUILD_CFLAGS = $(KBUILD_CFLAGS_32)
+
+$(obj)/vdso32-timens.so.dbg: FORCE $(vobjs32-timens)
+	$(call if_changed,vdso)
 
 $(obj)/vdso32.so.dbg: FORCE $(vobjs32)
 	$(call if_changed,vdso)
@@ -184,3 +203,4 @@ PHONY += vdso_install $(vdso_img_insttargets)
 vdso_install: $(vdso_img_insttargets)
 
 clean-files := vdso32.so vdso32.so.dbg vdso64* vdso-image-*.c vdsox32.so*
+clean-files += vdso32-timens.so vdso32-timens.so.dbg
