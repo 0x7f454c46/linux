@@ -254,7 +254,7 @@ notrace void set_normalized_timespec(struct timespec *ts, time_t sec, s64 nsec)
 
 notrace static __always_inline int monotonic_to_ns(struct timespec *ts)
 {
-#ifdef CONFIG_TIME_NS
+#ifdef BUILD_VDSO_TIME_NS
 	struct timens_offsets *timens = (struct timens_offsets *) &timens_page;
 	struct timespec offset;
 
