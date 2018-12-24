@@ -177,16 +177,17 @@ extern void bad_put_le(void);
 
 static void go(void *raw_addr, size_t raw_len,
 	       void *stripped_addr, size_t stripped_len,
-	       FILE *outfile, const char *name)
+	       FILE *outfile, const char *name,
+	       FILE *out_entries_lds)
 {
 	Elf64_Ehdr *hdr = (Elf64_Ehdr *)raw_addr;
 
 	if (hdr->e_ident[EI_CLASS] == ELFCLASS64) {
 		go64(raw_addr, raw_len, stripped_addr, stripped_len,
-		     outfile, name);
+		     outfile, name, out_entries_lds);
 	} else if (hdr->e_ident[EI_CLASS] == ELFCLASS32) {
 		go32(raw_addr, raw_len, stripped_addr, stripped_len,
-		     outfile, name);
+		     outfile, name, out_entries_lds);
 	} else {
 		fail("unknown ELF class\n");
 	}
@@ -216,12 +217,12 @@ int main(int argc, char **argv)
 {
 	size_t raw_len, stripped_len;
 	void *raw_addr, *stripped_addr;
-	FILE *outfile;
+	FILE *outfile, *entries_lds = NULL;
 	char *name, *tmp;
 	int namelen;
 
-	if (argc != 4) {
-		printf("Usage: vdso2c RAW_INPUT STRIPPED_INPUT OUTPUT\n");
+	if (argc < 4) {
+		printf("Usage: vdso2c RAW_INPUT STRIPPED_INPUT OUTPUT [OUTPUT_ENTRIES.LDS]\n");
 		return 1;
 	}
 
@@ -253,11 +254,21 @@ int main(int argc, char **argv)
 	if (!outfile)
 		err(1, "fopen(%s)", outfilename);
 
-	go(raw_addr, raw_len, stripped_addr, stripped_len, outfile, name);
+	if (argc == 5) {
+		entries_lds = fopen(argv[4], "w");
+		if (!entries_lds) {
+			fclose(outfile);
+			err(1, "fopen(%s)", argv[4]);
+		}
+	}
+
+	go(raw_addr, raw_len, stripped_addr, stripped_len, outfile, name, entries_lds);
 
 	munmap(raw_addr, raw_len);
 	munmap(stripped_addr, stripped_len);
 	fclose(outfile);
+	if (entries_lds)
+		fclose(entries_lds);
 
 	return 0;
 }

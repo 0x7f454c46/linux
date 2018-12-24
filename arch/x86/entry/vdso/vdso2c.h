@@ -7,7 +7,8 @@
 
 static void BITSFUNC(go)(void *raw_addr, size_t raw_len,
 			 void *stripped_addr, size_t stripped_len,
-			 FILE *outfile, const char *name)
+			 FILE *outfile, const char *name,
+			 FILE *out_entries_lds)
 {
 	int found_load = 0;
 	unsigned long load_size = -1;  /* Work around bogus warning */
@@ -72,12 +73,20 @@ static void BITSFUNC(go)(void *raw_addr, size_t raw_len,
 	for (i = 0; i < GET_LE(&hdr->e_shnum); i++) {
 		ELF(Shdr) *sh = raw_addr + GET_LE(&hdr->e_shoff) +
 			GET_LE(&hdr->e_shentsize) * i;
+		const char* section_name = secstrings + GET_LE(&sh->sh_name);
+
 		if (GET_LE(&sh->sh_type) == SHT_SYMTAB)
 			symtab_hdr = sh;
 
-		if (!strcmp(secstrings + GET_LE(&sh->sh_name),
-			    ".altinstructions"))
+		if (strcmp(section_name, ".altinstructions") == 0)
 			alt_sec = sh;
+
+		if (!out_entries_lds)
+			continue;
+
+		if (strncmp(section_name, ".vdso-entry.", 12) == 0)
+			fprintf(out_entries_lds, "\t\t*(%s) = %lx;\n",
+				section_name, (unsigned long)sh->sh_addr);
 	}
 
 	if (!symtab_hdr)
