@@ -39,7 +39,7 @@ obj-$(VDSO32-y)			+= vdso32-setup.o
 
 vobjs := $(foreach F,$(vobjs-y),$(obj)/$F)
 vobjs32 := $(foreach F,$(vobjs32-y),$(obj)/vdso32/$F)
-vobjs64-timens := $(foreach F,$(vobjs64-timens-y),$(obj)/$F)
+vobjs-timens := $(foreach F,$(vobjs-timens-y),$(obj)/$F)
 vobjs32-timens := $(foreach F,$(vobjs32-timens-y),$(obj)/vdso32/$F)
 
 $(obj)/vdso.o: $(obj)/vdso.so
