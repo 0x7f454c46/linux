@@ -123,7 +123,7 @@ static void BITSFUNC(go)(void *raw_addr, size_t raw_len,
 		if (ELF_FUNC(ST_TYPE, sym->st_info) != STT_FUNC)
 			continue;
 
-		fprintf(out_entries_lds, "\t\t. = ABSOLUTE(%#lx)\n",
+		fprintf(out_entries_lds, "\t\t. = ABSOLUTE(%#lx);\n",
 				(unsigned long)GET_LE(&sym->st_value));
 		fprintf(out_entries_lds, "\t\t*(.text.%s*)\n", name);
 	}
