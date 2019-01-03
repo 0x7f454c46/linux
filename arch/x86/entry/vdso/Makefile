@@ -45,8 +45,8 @@ vobjs32-timens := $(foreach F,$(vobjs32-timens-y),$(obj)/vdso32/$F)
 $(obj)/vdso.o: $(obj)/vdso.so
 
 targets += vdso.lds $(vobjs-y) vdso32/vdso32.lds $(vobjs32-y)
-targets += vdso-timens.lds $(vobjs-timens-y)
-targets += vdso32/vdso32-timens.lds $(vobjs32-timens-y)
+targets += vdso-timens.lds $(vobjs-timens-y) vdso64.entries
+targets += vdso32/vdso32-timens.lds $(vobjs32-timens-y) vdso32.entries
 
 # Build the vDSO image C files and link them in.
 vdso_img_objs := $(vdso_img-y:%=vdso-image-%.o)
@@ -72,7 +72,7 @@ $(obj)/vdso64.so.dbg: $(obj)/vdso.lds $(vobjs) FORCE
 HOST_EXTRACFLAGS += -I$(srctree)/tools/include -I$(srctree)/include/uapi -I$(srctree)/arch/$(SUBARCH)/include/uapi
 hostprogs-y			+= vdso2c
 
-$(obj)/vdso%.entries: $(obj)/vdso-image-%-timens.c
+$(obj)/vdso%.entries: $(obj)/vdso-image-%-timens.c $(obj)/vdso2c
 
 quiet_cmd_vdso2c = VDSO2C  $@
       cmd_vdso2c = $(obj)/vdso2c $< $(<:%.dbg=%) $@ \
