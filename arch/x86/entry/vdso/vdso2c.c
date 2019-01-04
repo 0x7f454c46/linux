@@ -160,16 +160,13 @@ extern void bad_put_le(void);
 #define BITSFUNC3(name, bits, suffix) name##bits##suffix
 #define BITSFUNC2(name, bits, suffix) BITSFUNC3(name, bits, suffix)
 #define BITSFUNC(name) BITSFUNC2(name, ELF_BITS, )
+#define ELF_FUNC(f, x) (BITSFUNC2(ELF, ELF_BITS, _##f)(x))
 
 #define INT_BITS BITSFUNC2(int, ELF_BITS, _t)
 
 #define ELF_BITS_XFORM2(bits, x) Elf##bits##_##x
 #define ELF_BITS_XFORM(bits, x) ELF_BITS_XFORM2(bits, x)
 #define ELF(x) ELF_BITS_XFORM(ELF_BITS, x)
-
-#define ELF_BITS_FUNC2(bits, f, x)	ELF##bits##_##f(x)
-#define ELF_BITS_FUNC(bits, f, x)	ELF_BITS_FUNC2(bits, f, x)
-#define ELF_FUNC(f, x)			ELF_BITS_FUNC(ELF_BITS, f, x)
 
 #define ELF_BITS 64
 #include "vdso2c.h"
