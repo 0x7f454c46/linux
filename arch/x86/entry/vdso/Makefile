@@ -41,6 +41,8 @@ vobjs := $(foreach F,$(vobjs-y),$(obj)/$F)
 vobjs32 := $(foreach F,$(vobjs32-y),$(obj)/vdso32/$F)
 vobjs-timens := $(foreach F,$(vobjs-timens-y),$(obj)/$F)
 vobjs32-timens := $(foreach F,$(vobjs32-timens-y),$(obj)/vdso32/$F)
+dep-vdso.lds-$(CONFIG_TIME_NS) += $(obj)/vdso-image-64-timens.c
+dep-vdso32.lds-$(CONFIG_TIME_NS) += $(obj)/vdso-image-32-timens.c
 
 $(obj)/vdso.o: $(obj)/vdso.so
 
@@ -72,14 +74,15 @@ $(obj)/vdso64.so.dbg: $(obj)/vdso.lds $(vobjs) FORCE
 HOST_EXTRACFLAGS += -I$(srctree)/tools/include -I$(srctree)/include/uapi -I$(srctree)/arch/$(SUBARCH)/include/uapi
 hostprogs-y			+= vdso2c
 
-$(obj)/vdso%.entries: $(obj)/vdso-image-%-timens.c $(obj)/vdso2c
-
 quiet_cmd_vdso2c = VDSO2C  $@
       cmd_vdso2c = $(obj)/vdso2c $< $(<:%.dbg=%) $@ \
 		   $(filter %.entries,$(<:%-timens.so.dbg=%.entries))
 
 $(obj)/vdso-image-%.c: $(obj)/vdso%.so.dbg $(obj)/vdso%.so $(obj)/vdso2c FORCE
 	$(call if_changed,vdso2c)
+
+$(obj)/vdso.lds: $(dep-vdso.lds-y) $(obj)/vdso2c FORCE
+$(obj)/vdso32/vdso32.lds: $(dep-vdso32.lds-y) $(obj)/vdso2c FORCE
 
 #
 # Don't omit frame pointers for ease of userspace debugging, but do
