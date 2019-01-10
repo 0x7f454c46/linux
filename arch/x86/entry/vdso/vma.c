@@ -198,6 +198,7 @@ static void vma_clear_pt(struct mm_struct *mm, struct vm_area_struct *vma)
 	tlb_gather_mmu(&tlb, mm, start, end);
 	free_pgd_range(&tlb, start, end, start, end);
 	tlb_finish_mmu(&tlb, start, end);
+	flush_tlb_mm_range(mm, start, end, VM_NONE);
 }
 
 int vdso_join_timens(struct task_struct *task, bool inside_ns)
