@@ -189,18 +189,6 @@ static const struct vdso_image *timens_vdso(const struct vdso_image *old_img,
 	return NULL;
 }
 
-static void vma_clear_pt(struct mm_struct *mm, struct vm_area_struct *vma)
-{
-	unsigned long start = vma->vm_start;
-	unsigned long end = vma->vm_end;
-	struct mmu_gather tlb;
-
-	tlb_gather_mmu(&tlb, mm, start, end);
-	free_pgd_range(&tlb, start, end, start, end);
-	tlb_finish_mmu(&tlb, start, end);
-	flush_tlb_mm_range(mm, start, end, VM_NONE);
-}
-
 int vdso_join_timens(struct task_struct *task, bool inside_ns)
 {
 	const struct vdso_image *new_image, *old_image;
@@ -227,10 +215,12 @@ int vdso_join_timens(struct task_struct *task, bool inside_ns)
 	mm->context.vdso_image = new_image;
 
 	for (vma = mm->mmap; vma; vma = vma->vm_next) {
+		unsigned long size = vma->vm_end - vma->vm_start;
+
 		if (vma_is_special_mapping(vma, &vvar_mapping))
-			vma_clear_pt(mm, vma);
+			zap_page_range(vma, vma->vm_start, size);
 		if (vma_is_special_mapping(vma, &vdso_mapping))
-			vma_clear_pt(mm, vma);
+			zap_page_range(vma, vma->vm_start, size);
 	}
 
 out:
