@@ -51,7 +51,7 @@ extern const struct vdso_image vdso_image_32_timens;
 extern void __init init_vdso_image(const struct vdso_image *image);
 
 extern int map_vdso_once(const struct vdso_image *image, unsigned long addr);
-extern int vvar_purge_timens(struct task_struct *task);
+extern int vdso_join_timens(struct task_struct *task, bool inside_ns);
 
 #endif /* __ASSEMBLER__ */
 

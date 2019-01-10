@@ -25,7 +25,7 @@
 #include <asm/cpufeature.h>
 #include <asm/mshyperv.h>
 #include <asm/page.h>
-#include <asm/tlbflush.h>
+#include <asm/tlb.h>
 
 #if defined(CONFIG_X86_64)
 unsigned int __read_mostly vdso64_enabled = 1;
@@ -170,46 +170,78 @@ static const struct vm_special_mapping vvar_mapping = {
 	.mremap = vvar_mremap,
 };
 
-static void vvar_flush_timens_pte(struct mm_struct *mm, unsigned long addr)
+#ifdef CONFIG_TIME_NS
+static const struct vdso_image *timens_vdso(const struct vdso_image *old_img,
+					    bool in_ns)
 {
-	spinlock_t *ptl;
-	pte_t *ptep;
-
-	if (follow_pte_pmd(mm, addr, NULL, NULL, &ptep, NULL, &ptl))
-		return; /* no pte found */
-	ptep_get_and_clear(mm, addr, ptep);
-	pte_unmap_unlock(ptep, ptl);
-	flush_tlb_mm_range(mm, addr, addr + PAGE_SIZE, VM_NONE);
+#ifdef CONFIG_X86_X32_ABI
+	if (old_img == &vdso_image_x32)
+		return NULL;
+#endif
+#if defined CONFIG_X86_32 || defined CONFIG_IA32_EMULATION
+	if (old_img == &vdso_image_32 || old_img == &vdso_image_32_timens)
+		return in_ns ? &vdso_image_32_timens : &vdso_image_32;
+#endif
+#ifdef CONFIG_X86_64
+	if (old_img == &vdso_image_64 || old_img == &vdso_image_64_timens)
+		return in_ns ? &vdso_image_64_timens : &vdso_image_64;
+#endif
+	return NULL;
 }
 
-int vvar_purge_timens(struct task_struct *task)
+static void vma_clear_pt(struct mm_struct *mm, struct vm_area_struct *vma)
 {
+	unsigned long start = vma->vm_start;
+	unsigned long end = vma->vm_end;
+	struct mmu_gather tlb;
+
+	tlb_gather_mmu(&tlb, mm, start, end);
+	free_pgd_range(&tlb, start, end, start, end);
+	tlb_finish_mmu(&tlb, start, end);
+}
+
+int vdso_join_timens(struct task_struct *task, bool inside_ns)
+{
+	const struct vdso_image *new_image, *old_image;
 	struct mm_struct *mm = task->mm;
-	const struct vdso_image *image;
 	struct vm_area_struct *vma;
-	unsigned long addr;
+	int ret = 0;
 
 	if (down_write_killable(&mm->mmap_sem))
 		return -EINTR;
 
-	for (vma = mm->mmap; vma; vma = vma->vm_next) {
-		if (vma_is_special_mapping(vma, &vvar_mapping))
-			break;
+	old_image = mm->context.vdso_image;
+	new_image = timens_vdso(old_image, inside_ns);
+	if (!new_image) {
+		ret = -ENXIO;
+		goto out;
 	}
 
-	/* vvar is unmapped */
-	if (!vma || !vma_is_special_mapping(vma, &vvar_mapping))
+	/* Sanity checks, shouldn't happen */
+	if (unlikely(old_image->size != new_image->size)) {
+		ret = -ENXIO;
 		goto out;
+	}
 
-	image = mm->context.vdso_image;
+	mm->context.vdso_image = new_image;
 
-	addr = vma->vm_end + image->sym_timens_page;
-	vvar_flush_timens_pte(mm, addr);
+	for (vma = mm->mmap; vma; vma = vma->vm_next) {
+		if (vma_is_special_mapping(vma, &vvar_mapping))
+			vma_clear_pt(mm, vma);
+		if (vma_is_special_mapping(vma, &vdso_mapping))
+			vma_clear_pt(mm, vma);
+	}
 
 out:
 	up_write(&mm->mmap_sem);
-	return 0;
+	return ret;
 }
+#else /* CONFIG_TIME_NS */
+int vdso_join_timens(struct task_struct *task, bool inside_ns)
+{
+	return -ENXIO;
+}
+#endif
 
 /*
  * Add vdso and vvar mappings to current process.

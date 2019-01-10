@@ -97,7 +97,7 @@ struct time_namespace *copy_time_ns(unsigned long flags,
 	if (!(flags & CLONE_NEWTIME))
 		return get_time_ns(old_ns);
 
-	ret = vvar_purge_timens(current);
+	ret = vdso_join_timens(current, true);
 	if (ret)
 		return ERR_PTR(ret);
 
@@ -151,7 +151,7 @@ static int timens_install(struct nsproxy *nsproxy, struct ns_common *new)
 	    !ns_capable(current_user_ns(), CAP_SYS_ADMIN))
 		return -EPERM;
 
-	ret = vvar_purge_timens(current);
+	ret = vdso_join_timens(current, ns != &init_time_ns);
 	if (ret)
 		return ret;
 
