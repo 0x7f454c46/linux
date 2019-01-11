@@ -210,7 +210,7 @@ static void common_timens_adjust(clockid_t which_clock, struct timespec64 *tp)
 {
 	struct timens_offsets *ns_offsets = current->nsproxy->time_ns->offsets;
 
-	if (!ns_offsets)
+	if (!ns_offsets || !(ns_offsets->flags & TIMENS_USE_OFFSETS))
 		return;
 
 	switch (which_clock) {
@@ -243,6 +243,7 @@ static int posix_ktime_set_ts(clockid_t which_clock,
 	ktime_get_ts64(&ktp);
 
 	ns_offsets->monotonic_time_offset = timespec64_sub(*tp, ktp);
+	ns_offsets->flags |= TIMENS_USE_OFFSETS;
 
 	return 0;
 }
@@ -305,6 +306,7 @@ static int posix_set_boottime(clockid_t which_clock, const struct timespec64 *tp
 	ktime_get_boottime_ts64(&ktp);
 
 	ns_offsets->monotonic_boottime_offset = timespec64_sub(*tp, ktp);
+	ns_offsets->flags |= TIMENS_USE_OFFSETS;
 
 	return 0;
 }

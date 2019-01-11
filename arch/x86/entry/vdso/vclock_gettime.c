@@ -258,6 +258,10 @@ notrace static __always_inline int monotonic_to_ns(struct timespec *ts)
 	struct timens_offsets *timens = (struct timens_offsets *) &timens_page;
 	struct timespec offset;
 
+	/* Optimization: time is the same as on host, return right away */
+	if (unlikely(!(timens->flags & TIMENS_USE_OFFSETS)))
+		return 0;
+
 	offset = timespec64_to_timespec(timens->monotonic_time_offset);
 
 	*ts = timespec_add(*ts, offset);
