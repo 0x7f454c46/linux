@@ -29,25 +29,75 @@ system clocks. When a process in a non-root time namespace requests
 time of a clock, a namespace offset is added to the current value of
 this clock and the sum is returned.
 
-All offsets are placed on a separate page, this allows up to map it as
-part of vvar into user processes and use offsets from vdso calls.
+All offsets are placed on a separate page, this allows us to map it as
+part of VVAR into user processes and use offsets from VDSO calls.
 
 Now offsets are implemented for CLOCK_MONOTONIC and CLOCK_BOOTTIME
 clocks.
 
-Questions to discuss:
+v2: There are two major changes from the previous version:
 
-* Clone flags exhaustion. Currently there is only one unused clone flag
-bit left, and it may be worth to use it to extend arguments of the clone
-system call.
+* Two versions of the VDSO library to avoid a performance penalty for
+  host tasks outside time namespace (as suggested by Andy and Thomas).
 
-* Realtime clock implementation details. Is having a simple offset enough?
-What to do when date and time is changed on the host? Is there a need to
-adjust vfs modification and creation times? 
+  As it has been discussed on timens RFC, adding a new conditional branch
+  `if (inside_time_ns)` on VDSO for all processes is undesirable.
+  It will add a penalty for everybody as branch predictor may mispredict
+  the jump. Also there are instruction cache lines wasted on cmp/jmp.
 
-Cc: Jeff Dike <jdike@addtoit.com>
+  Those effects of introducing time namespace are very much unwanted
+  having in mind how much work have been spent on micro-optimisation
+  VDSO code.
+
+  Addressing those problems, there are two versions of VDSO's .so:
+  for host tasks (without any penalty) and for processes inside of time
+  namespace with clk_to_ns() that subtracts offsets from host's time.
+
+
+* Allow to set clock offsets for a namespace only before any processes
+  appear in it.
+
+  Now a time namespace looks similar to a pid namespace in a way how it is
+  created: unshare(CLONE_NEWTIME) system call creates a new time namespace,
+  but doesn't set it to the current process. Then all children of
+  the process will be born in the new time namespace, or a process can
+  use the setns() system call to join a namespace.
+
+  This scheme allows to create a new time namespaces, set clock offsets
+  and then populate the namespace with processes.
+
+Our performance measurements show that the price of VDSO's clock_gettime()
+in a child time namespace is about 8% with a hot CPU cache and about 90%
+with a cold CPU cache. There is no performance regression for host
+processes outside time namespace on those tests.
+
+We wrote two small benchmarks. The first one gettime_perf.c calls
+clock_gettime() in a loop for 3 seconds. It shows us performance with
+a hot CPU cache (more clock_gettime() cycles - the better):
+
+        | before     | CONFIG_TIME_NS=n | host        | inside timens
+--------|------------|------------------|-------------|-------------
+cycles  | 139887013  | 139453003        | 139899785   | 128792458
+diff (%)| 100        | 99.7             | 100         | 92
+
+The second one gettime_perf_cold.c calls rdtsc, clock_gettime(), rdtsc
+and shows a difference of second and first rdtsc. We call this binary in
+a loop 1000 times, get 1000 values and calculate MODE for them.
+It should show us performance with a cold CPU cache
+(lesser tsc per cycle - the better):
+
+        | before     | CONFIG_TIME_NS=n | host        | inside timens
+--------|------------|------------------|-------------|-------------
+tsc     | 6748       | 6718             | 6862        | 12682
+diff (%)| 100        | 99.6             | 101.7       | 188
+
+The numbers gathered on Intel(R) Core(TM) i5-6300U CPU @ 2.40GHz.
+
 Cc: Thomas Gleixner <tglx@linutronix.de>
+Cc: "Eric W. Biederman" <ebiederm@xmission.com>
 Cc: Andy Lutomirski <luto@kernel.org>
+Cc: Arnd Bergmann <arnd@arndb.de>
+Cc: Jeff Dike <jdike@addtoit.com>
 
 Andrei Vagin (12):
   ns: Introduce Time Namespace
