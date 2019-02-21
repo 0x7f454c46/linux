@@ -312,11 +312,6 @@ static inline void alias_free_mem_rcu(struct fib_alias *fa)
 	call_rcu(&fa->rcu, __alias_free_mem);
 }
 
-#define TNODE_KMALLOC_MAX \
-	ilog2((PAGE_SIZE - TNODE_SIZE(0)) / sizeof(struct key_vector *))
-#define TNODE_VMALLOC_MAX \
-	ilog2((SIZE_MAX - TNODE_SIZE(0)) / sizeof(struct key_vector *))
-
 static void __node_free_rcu(struct rcu_head *head)
 {
 	struct tnode *n = container_of(head, struct tnode, rcu);
@@ -333,8 +328,7 @@ static struct tnode *tnode_alloc(int bits)
 {
 	size_t size;
 
-	/* verify bits is within bounds */
-	if (bits > TNODE_VMALLOC_MAX)
+	if ((BITS_PER_LONG <= KEYLENGTH) && unlikely(bits >= BITS_PER_LONG))
 		return NULL;
 
 	/* determine size and verify it is non-zero and didn't overflow */
