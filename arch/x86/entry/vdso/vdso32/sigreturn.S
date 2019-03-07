@@ -11,7 +11,6 @@
 	.globl __kernel_sigreturn
 	.type __kernel_sigreturn,@function
 	nop /* this guy is needed for .LSTARTFDEDLSI1 below (watch for HACK) */
-	.section .text.__kernel_sigreturn, "ax"
 	ALIGN
 __kernel_sigreturn:
 .LSTART_sigreturn:
@@ -22,7 +21,6 @@ __kernel_sigreturn:
 	nop
 	.size __kernel_sigreturn,.-.LSTART_sigreturn
 
-	.section .text.__kernel_rt_sigreturn, "ax"
 	.globl __kernel_rt_sigreturn
 	.type __kernel_rt_sigreturn,@function
 	ALIGN

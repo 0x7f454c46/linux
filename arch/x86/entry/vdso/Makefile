@@ -3,7 +3,7 @@
 # Building vDSO images for x86.
 #
 
-KBUILD_CFLAGS += $(DISABLE_LTO) -ffunction-sections
+KBUILD_CFLAGS += $(DISABLE_LTO)
 KBUILD_CFLAGS += -falign-functions=$(CONFIG_X86_L1_CACHE_SHIFT)
 KASAN_SANITIZE			:= n
 UBSAN_SANITIZE			:= n
