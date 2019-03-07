@@ -152,7 +152,6 @@ extern void bad_put_le(void);
 #define BITSFUNC3(name, bits, suffix) name##bits##suffix
 #define BITSFUNC2(name, bits, suffix) BITSFUNC3(name, bits, suffix)
 #define BITSFUNC(name) BITSFUNC2(name, ELF_BITS, )
-#define ELF_FUNC(f, x) (BITSFUNC2(ELF, ELF_BITS, _##f)(x))
 
 #define INT_BITS BITSFUNC2(int, ELF_BITS, _t)
 
@@ -170,17 +169,16 @@ extern void bad_put_le(void);
 
 static void go(void *raw_addr, size_t raw_len,
 	       void *stripped_addr, size_t stripped_len,
-	       FILE *outfile, const char *name,
-	       FILE *out_entries_lds)
+	       FILE *outfile, const char *name)
 {
 	Elf64_Ehdr *hdr = (Elf64_Ehdr *)raw_addr;
 
 	if (hdr->e_ident[EI_CLASS] == ELFCLASS64) {
 		go64(raw_addr, raw_len, stripped_addr, stripped_len,
-		     outfile, name, out_entries_lds);
+		     outfile, name);
 	} else if (hdr->e_ident[EI_CLASS] == ELFCLASS32) {
 		go32(raw_addr, raw_len, stripped_addr, stripped_len,
-		     outfile, name, out_entries_lds);
+		     outfile, name);
 	} else {
 		fail("unknown ELF class\n");
 	}
@@ -210,12 +208,12 @@ int main(int argc, char **argv)
 {
 	size_t raw_len, stripped_len;
 	void *raw_addr, *stripped_addr;
-	FILE *outfile, *entries_lds = NULL;
+	FILE *outfile;
 	char *name, *tmp;
 	int namelen;
 
-	if (argc < 4) {
-		printf("Usage: vdso2c RAW_INPUT STRIPPED_INPUT OUTPUT [OUTPUT_ENTRIES.LDS]\n");
+	if (argc != 4) {
+		printf("Usage: vdso2c RAW_INPUT STRIPPED_INPUT OUTPUT\n");
 		return 1;
 	}
 
@@ -247,21 +245,11 @@ int main(int argc, char **argv)
 	if (!outfile)
 		err(1, "fopen(%s)", outfilename);
 
-	if (argc == 5) {
-		entries_lds = fopen(argv[4], "w");
-		if (!entries_lds) {
-			fclose(outfile);
-			err(1, "fopen(%s)", argv[4]);
-		}
-	}
-
-	go(raw_addr, raw_len, stripped_addr, stripped_len, outfile, name, entries_lds);
+	go(raw_addr, raw_len, stripped_addr, stripped_len, outfile, name);
 
 	munmap(raw_addr, raw_len);
 	munmap(stripped_addr, stripped_len);
 	fclose(outfile);
-	if (entries_lds)
-		fclose(entries_lds);
 
 	return 0;
 }
