@@ -29,6 +29,13 @@
 
 #if defined(CONFIG_X86_64)
 unsigned int __read_mostly vdso64_enabled = 1;
+
+static __init int vdso_setup(char *s)
+{
+	vdso64_enabled = simple_strtoul(s, NULL, 0);
+	return 0;
+}
+__setup("vdso=", vdso_setup);
 #endif
 
 void __init init_vdso_image(const struct vdso_image *image)
@@ -426,13 +433,6 @@ int arch_setup_additional_pages(struct linux_binprm *bprm, int uses_interp)
 #endif
 
 #ifdef CONFIG_X86_64
-static __init int vdso_setup(char *s)
-{
-	vdso64_enabled = simple_strtoul(s, NULL, 0);
-	return 0;
-}
-__setup("vdso=", vdso_setup);
-
 static int __init init_vdso(void)
 {
 	init_vdso_image(&vdso_image_64);
