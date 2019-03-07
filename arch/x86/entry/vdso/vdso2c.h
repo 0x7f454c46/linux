@@ -15,7 +15,7 @@ static void BITSFUNC(go)(void *raw_addr, size_t raw_len,
 	unsigned long mapping_size;
 	ELF(Ehdr) *hdr = (ELF(Ehdr) *)raw_addr;
 	unsigned int i, syms_nr;
-	unsigned long j, last_entry_addr;
+	unsigned long j;
 	ELF(Shdr) *symtab_hdr = NULL, *strtab_hdr, *secstrings_hdr,
 		*alt_sec = NULL;
 	ELF(Dyn) *dyn = 0, *dyn_end = 0;
@@ -121,7 +121,7 @@ static void BITSFUNC(go)(void *raw_addr, size_t raw_len,
 		if (!out_entries_lds)
 			continue;
 
-		if (ELF_FUNC(ST_BIND, sym->st_info) == STB_WEAK)
+		if (ELF_FUNC(ST_BIND, sym->st_info) != STB_GLOBAL)
 			continue;
 
 		if (ELF_FUNC(ST_TYPE, sym->st_info) != STT_FUNC)
@@ -134,19 +134,8 @@ static void BITSFUNC(go)(void *raw_addr, size_t raw_len,
 
 	qsort(entries, next_entry - entries, sizeof(*entries), entry_addr_cmp);
 
-	last_entry_addr = -1UL;
 	while (next_entry != entries && out_entries_lds) {
 		next_entry--;
-
-		/*
-		 * Unfortunately, WEAK symbols from objects are resoved
-		 * into LOCAL symbols on ia32. Filter them here, as
-		 * linker wouldn't like aligning the same symbol twice.
-		 */
-		if (last_entry_addr == next_entry->addr)
-			continue;
-		last_entry_addr = next_entry->addr;
-
 		fprintf(out_entries_lds, "\t\t. = ABSOLUTE(%#lx);\n\t\t*(.text.%s*)\n",
 			next_entry->addr, next_entry->name);
 	}
