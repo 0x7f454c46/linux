@@ -38,13 +38,20 @@ static __init int vdso_setup(char *s)
 __setup("vdso=", vdso_setup);
 #endif
 
-void __init init_vdso_image(const struct vdso_image *image)
+void __init init_vdso_image(struct vdso_image *image)
 {
 	BUG_ON(image->size % PAGE_SIZE != 0);
 
 	apply_alternatives((struct alt_instr *)(image->text + image->alt),
 			   (struct alt_instr *)(image->text + image->alt +
 						image->alt_len));
+#ifdef CONFIG_TIME_NS
+	image->text_timens = vmalloc_32(image->size);
+	if (WARN_ON(image->text_timens == NULL))
+		return;
+
+	memcpy(image->text_timens, image->text, image->size);
+#endif
 }
 
 struct linux_binprm;
@@ -53,11 +60,17 @@ static vm_fault_t vdso_fault(const struct vm_special_mapping *sm,
 		      struct vm_area_struct *vma, struct vm_fault *vmf)
 {
 	const struct vdso_image *image = vma->vm_mm->context.vdso_image;
+	struct time_namespace *ns = current->nsproxy->time_ns;
+	unsigned long offset = vmf->pgoff << PAGE_SHIFT;
 
 	if (!image || (vmf->pgoff << PAGE_SHIFT) >= image->size)
 		return VM_FAULT_SIGBUS;
 
-	vmf->page = virt_to_page(image->text + (vmf->pgoff << PAGE_SHIFT));
+	if (ns->offsets && image->text_timens)
+		vmf->page = vmalloc_to_page(image->text_timens + offset);
+	else
+		vmf->page = virt_to_page(image->text + offset);
+
 	get_page(vmf->page);
 	return 0;
 }
@@ -172,58 +185,13 @@ static const struct vm_special_mapping vvar_mapping = {
 };
 
 #ifdef CONFIG_TIME_NS
-static const struct vdso_image *timens_vdso(const struct vdso_image *old_img,
-					    bool in_ns)
-{
-#ifdef CONFIG_X86_X32_ABI
-	if (old_img == &vdso_image_x32)
-		return NULL;
-#endif
-#if defined CONFIG_X86_32 || defined CONFIG_IA32_EMULATION
-	if (old_img == &vdso_image_32 || old_img == &vdso_image_32_timens)
-		return in_ns ? &vdso_image_32_timens : &vdso_image_32;
-#endif
-#ifdef CONFIG_X86_64
-	if (old_img == &vdso_image_64 || old_img == &vdso_image_64_timens)
-		return in_ns ? &vdso_image_64_timens : &vdso_image_64;
-#endif
-	return NULL;
-}
-
-static const struct vdso_image *image_to_timens(const struct vdso_image *img)
-{
-	bool in_ns = (current->nsproxy->time_ns != &init_time_ns);
-	const struct vdso_image *ns;
-
-	ns = timens_vdso(img, in_ns);
-
-	return ns ?: img;
-}
-
 int vdso_join_timens(struct task_struct *task, bool inside_ns)
 {
-	const struct vdso_image *new_image, *old_image;
 	struct mm_struct *mm = task->mm;
 	struct vm_area_struct *vma;
-	int ret = 0;
 
 	if (down_write_killable(&mm->mmap_sem))
 		return -EINTR;
-
-	old_image = mm->context.vdso_image;
-	new_image = timens_vdso(old_image, inside_ns);
-	if (!new_image) {
-		ret = -EOPNOTSUPP;
-		goto out;
-	}
-
-	/* Sanity checks, shouldn't happen */
-	if (unlikely(old_image->size != new_image->size)) {
-		ret = -ENXIO;
-		goto out;
-	}
-
-	mm->context.vdso_image = new_image;
 
 	for (vma = mm->mmap; vma; vma = vma->vm_next) {
 		unsigned long size = vma->vm_end - vma->vm_start;
@@ -234,15 +202,10 @@ int vdso_join_timens(struct task_struct *task, bool inside_ns)
 			zap_page_range(vma, vma->vm_start, size);
 	}
 
-out:
 	up_write(&mm->mmap_sem);
-	return ret;
+	return 0;
 }
 #else /* CONFIG_TIME_NS */
-static const struct vdso_image *image_to_timens(const struct vdso_image *img)
-{
-	return img;
-}
 int vdso_join_timens(struct task_struct *task, bool inside_ns)
 {
 	return -ENXIO;
@@ -263,8 +226,6 @@ static int map_vdso(const struct vdso_image *image, unsigned long addr)
 
 	if (down_write_killable(&mm->mmap_sem))
 		return -EINTR;
-
-	image = image_to_timens(image);
 
 	addr = get_unmapped_area(NULL, addr,
 				 image->size - image->sym_vvar_start, 0, 0);
