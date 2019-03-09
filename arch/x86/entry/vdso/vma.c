@@ -25,11 +25,31 @@
 #include <asm/cpufeature.h>
 #include <asm/mshyperv.h>
 #include <asm/page.h>
+#include <asm/static_retcall.h>
 #include <asm/tlb.h>
 
 #if defined(CONFIG_X86_64)
 unsigned int __read_mostly vdso64_enabled = 1;
 #endif
+
+static __init int apply_retcalls(struct retcall_entry *ent, unsigned long nr)
+{
+	while (nr--) {
+		void *call_addr	= (void *)ent + ent->call;
+		void *ret_addr	= (void *)ent + ent->ret;
+		size_t ret_sz	= ent->out - ent->ret;
+
+		if (WARN_ON(ret_sz > PAGE_SIZE))
+			goto next;
+
+		memcpy(call_addr, ret_addr, ret_sz);
+
+next:
+		ent++;
+	}
+
+	return 0;
+}
 
 void __init init_vdso_image(struct vdso_image *image)
 {
@@ -44,6 +64,8 @@ void __init init_vdso_image(struct vdso_image *image)
 		return;
 
 	memcpy(image->text_timens, image->text, image->size);
+	apply_retcalls((struct retcall_entry *)(image->text + image->retcall),
+			image->retcall_len / sizeof(struct retcall_entry));
 #endif
 }
 

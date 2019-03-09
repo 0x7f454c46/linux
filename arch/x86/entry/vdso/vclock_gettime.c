@@ -18,6 +18,7 @@
 #include <asm/msr.h>
 #include <asm/pvclock.h>
 #include <asm/mshyperv.h>
+#include <asm/static_retcall.h>
 #include <linux/math64.h>
 #include <linux/time.h>
 #include <linux/kernel.h>
@@ -174,8 +175,12 @@ notrace static __always_inline void clk_to_ns(clockid_t clk, struct timespec *ts
 		ts->tv_sec--;
 	}
 }
+#define _static_retcall static_retcall
+#define _static_retcall_int static_retcall_int
 #else
 notrace static __always_inline void clk_to_ns(clockid_t clk, struct timespec *ts) {}
+#define _static_retcall(...)
+#define _static_retcall_int(...)
 #endif
 
 notrace static int do_hres(clockid_t clk, struct timespec *ts)
@@ -204,9 +209,7 @@ notrace static int do_hres(clockid_t clk, struct timespec *ts)
 	ts->tv_sec = sec + __iter_div_u64_rem(ns, NSEC_PER_SEC, &ns);
 	ts->tv_nsec = ns;
 
-	clk_to_ns(clk, ts);
-
-	return 0;
+	_static_retcall_int(0, clk_to_ns, clk, ts);
 }
 
 notrace static void do_coarse(clockid_t clk, struct timespec *ts)
@@ -220,7 +223,7 @@ notrace static void do_coarse(clockid_t clk, struct timespec *ts)
 		ts->tv_nsec = base->nsec;
 	} while (unlikely(gtod_read_retry(gtod, seq)));
 
-	clk_to_ns(clk, ts);
+	_static_retcall(clk_to_ns, clk, ts);
 }
 
 notrace int __vdso_clock_gettime(clockid_t clock, struct timespec *ts)

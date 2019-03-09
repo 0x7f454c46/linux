@@ -45,6 +45,7 @@ SECTIONS
 	.gnu.version	: { *(.gnu.version) }
 	.gnu.version_d	: { *(.gnu.version_d) }
 	.gnu.version_r	: { *(.gnu.version_r) }
+	__retcall_table	: { *(__retcall_table) }	:text
 
 	.dynamic	: { *(.dynamic) }		:text	:dynamic
 
