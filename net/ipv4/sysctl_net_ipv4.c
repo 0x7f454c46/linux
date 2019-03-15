@@ -444,6 +444,13 @@ static struct ctl_table ipv4_table[] = {
 		.proc_handler	= proc_dointvec
 	},
 	{
+		.procname	= "fib_balance_budget",
+		.data		= &fib_balance_budget,
+		.maxlen		= sizeof(fib_balance_budget),
+		.mode		= 0644,
+		.proc_handler	= proc_douintvec,
+	},
+	{
 		.procname	= "inet_peer_threshold",
 		.data		= &inet_peer_threshold,
 		.maxlen		= sizeof(int),

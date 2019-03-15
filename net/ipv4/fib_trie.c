@@ -182,8 +182,10 @@ struct trie {
 #endif
 };
 
-static struct key_vector *resize(struct trie *t, struct key_vector *tn);
+static struct key_vector *resize(struct trie *t, struct key_vector *tn,
+				 unsigned int *budget);
 static size_t tnode_free_size;
+unsigned int fib_balance_budget = UINT_MAX;
 
 /*
  * synchronize_rcu after call_rcu for that many pages; it should be especially
@@ -506,7 +508,8 @@ static void tnode_free(struct key_vector *tn)
 
 static struct key_vector *replace(struct trie *t,
 				  struct key_vector *oldtnode,
-				  struct key_vector *tn)
+				  struct key_vector *tn,
+				  unsigned int *budget)
 {
 	struct key_vector *tp = node_parent(oldtnode);
 	unsigned long i;
@@ -522,19 +525,19 @@ static struct key_vector *replace(struct trie *t,
 	tnode_free(oldtnode);
 
 	/* resize children now that oldtnode is freed */
-	for (i = child_length(tn); i;) {
+	for (i = child_length(tn); i && *budget;) {
 		struct key_vector *inode = get_child(tn, --i);
 
 		/* resize child node */
 		if (tnode_full(tn, inode))
-			tn = resize(t, inode);
+			tn = resize(t, inode, budget);
 	}
 
 	return tp;
 }
 
-static struct key_vector *inflate(struct trie *t,
-				  struct key_vector *oldtnode)
+static struct key_vector *inflate(struct trie *t, struct key_vector *oldtnode,
+				  unsigned int *budget)
 {
 	struct key_vector *tn;
 	unsigned long i;
@@ -621,7 +624,7 @@ static struct key_vector *inflate(struct trie *t,
 	}
 
 	/* setup the parent pointers into and out of this node */
-	return replace(t, oldtnode, tn);
+	return replace(t, oldtnode, tn, budget);
 nomem:
 	/* all pointers should be clean so we are done */
 	tnode_free(tn);
@@ -629,8 +632,8 @@ notnode:
 	return NULL;
 }
 
-static struct key_vector *halve(struct trie *t,
-				struct key_vector *oldtnode)
+static struct key_vector *halve(struct trie *t, struct key_vector *oldtnode,
+				unsigned int *budget)
 {
 	struct key_vector *tn;
 	unsigned long i;
@@ -676,7 +679,7 @@ static struct key_vector *halve(struct trie *t,
 	}
 
 	/* setup the parent pointers into and out of this node */
-	return replace(t, oldtnode, tn);
+	return replace(t, oldtnode, tn, budget);
 nomem:
 	/* all pointers should be clean so we are done */
 	tnode_free(tn);
@@ -843,15 +846,15 @@ static inline bool should_collapse(struct key_vector *tn)
 	return used < 2;
 }
 
-#define MAX_WORK 10
-static struct key_vector *resize(struct trie *t, struct key_vector *tn)
+static struct key_vector *resize(struct trie *t, struct key_vector *tn,
+				 unsigned int *budget)
 {
 #ifdef CONFIG_IP_FIB_TRIE_STATS
 	struct trie_use_stats __percpu *stats = t->stats;
 #endif
 	struct key_vector *tp = node_parent(tn);
 	unsigned long cindex = get_index(tn->key, tp);
-	int max_work = MAX_WORK;
+	bool inflated = false;
 
 	pr_debug("In tnode_resize %p inflate_threshold=%d threshold=%d\n",
 		 tn, inflate_threshold, halve_threshold);
@@ -865,8 +868,8 @@ static struct key_vector *resize(struct trie *t, struct key_vector *tn)
 	/* Double as long as the resulting node has a number of
 	 * nonempty nodes that are above the threshold.
 	 */
-	while (should_inflate(tp, tn) && max_work) {
-		tp = inflate(t, tn);
+	while (should_inflate(tp, tn) && *budget) {
+		tp = inflate(t, tn, budget);
 		if (!tp) {
 #ifdef CONFIG_IP_FIB_TRIE_STATS
 			this_cpu_inc(stats->resize_node_skipped);
@@ -874,22 +877,25 @@ static struct key_vector *resize(struct trie *t, struct key_vector *tn)
 			break;
 		}
 
-		max_work--;
+		(*budget)--;
+		inflated = true;
 		tn = get_child(tp, cindex);
 	}
 
 	/* update parent in case inflate failed */
 	tp = node_parent(tn);
 
-	/* Return if at least one inflate is run */
-	if (max_work != MAX_WORK)
+	/* Return if at least one inflate is run:
+	 * microoptimization to not recalculate thresholds
+	 */
+	if (inflated)
 		return tp;
 
 	/* Halve as long as the number of empty children in this
 	 * node is above threshold.
 	 */
-	while (should_halve(tp, tn) && max_work) {
-		tp = halve(t, tn);
+	while (should_halve(tp, tn) && *budget) {
+		tp = halve(t, tn, budget);
 		if (!tp) {
 #ifdef CONFIG_IP_FIB_TRIE_STATS
 			this_cpu_inc(stats->resize_node_skipped);
@@ -897,7 +903,7 @@ static struct key_vector *resize(struct trie *t, struct key_vector *tn)
 			break;
 		}
 
-		max_work--;
+		(*budget)--;
 		tn = get_child(tp, cindex);
 	}
 
@@ -1005,8 +1011,10 @@ static struct fib_alias *fib_find_alias(struct hlist_head *fah, u8 slen,
 
 static void trie_rebalance(struct trie *t, struct key_vector *tn)
 {
-	while (!IS_TRIE(tn))
-		tn = resize(t, tn);
+	unsigned int budget = fib_balance_budget;
+
+	while (budget && !IS_TRIE(tn))
+		tn = resize(t, tn, &budget);
 }
 
 static int fib_insert_node(struct trie *t, struct key_vector *tp,
@@ -1784,6 +1792,7 @@ out:
 void fib_table_flush_external(struct fib_table *tb)
 {
 	struct trie *t = (struct trie *)tb->tb_data;
+	unsigned int budget = fib_balance_budget;
 	struct key_vector *pn = t->kv;
 	unsigned long cindex = 1;
 	struct hlist_node *tmp;
@@ -1806,7 +1815,7 @@ void fib_table_flush_external(struct fib_table *tb)
 				update_suffix(pn);
 
 			/* resize completed node */
-			pn = resize(t, pn);
+			pn = resize(t, pn, &budget);
 			cindex = get_index(pkey, pn);
 
 			continue;
@@ -1853,6 +1862,7 @@ void fib_table_flush_external(struct fib_table *tb)
 int fib_table_flush(struct net *net, struct fib_table *tb, bool flush_all)
 {
 	struct trie *t = (struct trie *)tb->tb_data;
+	unsigned int budget = fib_balance_budget;
 	struct key_vector *pn = t->kv;
 	unsigned long cindex = 1;
 	struct hlist_node *tmp;
@@ -1876,7 +1886,7 @@ int fib_table_flush(struct net *net, struct fib_table *tb, bool flush_all)
 				update_suffix(pn);
 
 			/* resize completed node */
-			pn = resize(t, pn);
+			pn = resize(t, pn, &budget);
 			cindex = get_index(pkey, pn);
 
 			continue;
