@@ -184,15 +184,8 @@ struct trie {
 
 static struct key_vector *resize(struct trie *t, struct key_vector *tn,
 				 unsigned int *budget);
-static size_t tnode_free_size;
+static atomic_long_t objects_waiting_rcu;
 unsigned int fib_balance_budget = UINT_MAX;
-
-/*
- * synchronize_rcu after call_rcu for that many pages; it should be especially
- * useful before resizing the root node with PREEMPT_NONE configs; the value was
- * obtained experimentally, aiming to avoid visible slowdown.
- */
-static const int sync_pages = 128;
 
 static struct kmem_cache *fn_alias_kmem __ro_after_init;
 static struct kmem_cache *trie_leaf_kmem __ro_after_init;
@@ -306,11 +299,16 @@ static const int inflate_threshold_root = 30;
 static void __alias_free_mem(struct rcu_head *head)
 {
 	struct fib_alias *fa = container_of(head, struct fib_alias, rcu);
+
+	atomic_long_dec(&objects_waiting_rcu);
 	kmem_cache_free(fn_alias_kmem, fa);
 }
 
 static inline void alias_free_mem_rcu(struct fib_alias *fa)
 {
+	lockdep_rtnl_is_held();
+
+	atomic_long_inc(&objects_waiting_rcu);
 	call_rcu(&fa->rcu, __alias_free_mem);
 }
 
@@ -318,13 +316,40 @@ static void __node_free_rcu(struct rcu_head *head)
 {
 	struct tnode *n = container_of(head, struct tnode, rcu);
 
+	atomic_long_dec(&objects_waiting_rcu);
 	if (!n->tn_bits)
 		kmem_cache_free(trie_leaf_kmem, n);
 	else
 		kvfree(n);
 }
 
-#define node_free(n) call_rcu(&tn_info(n)->rcu, __node_free_rcu)
+static inline void node_free(struct key_vector *n)
+{
+	lockdep_rtnl_is_held();
+
+	atomic_long_inc(&objects_waiting_rcu);
+	call_rcu(&tn_info(n)->rcu, __node_free_rcu);
+}
+
+static unsigned long fib_shrink_count(struct shrinker *s,
+				      struct shrink_control *sc)
+{
+	return (unsigned long)atomic_long_read(&objects_waiting_rcu);
+}
+
+static unsigned long fib_shrink_scan(struct shrinker *s,
+				    struct shrink_control *sc)
+{
+	long ret = (unsigned long)atomic_long_read(&objects_waiting_rcu);
+
+	synchronize_rcu();
+	return (unsigned long)ret;
+}
+
+static struct shrinker fib_shrinker = {
+	.count_objects = fib_shrink_count,
+	.scan_objects = fib_shrink_scan,
+};
 
 static struct tnode *tnode_alloc(int bits)
 {
@@ -494,15 +519,8 @@ static void tnode_free(struct key_vector *tn)
 
 	while (head) {
 		head = head->next;
-		tnode_free_size += TNODE_SIZE(1ul << tn->bits);
 		node_free(tn);
-
 		tn = container_of(head, struct tnode, rcu)->kv;
-	}
-
-	if (tnode_free_size >= PAGE_SIZE * sync_pages) {
-		tnode_free_size = 0;
-		synchronize_rcu();
 	}
 }
 
@@ -2118,6 +2136,9 @@ void __init fib_trie_init(void)
 	trie_leaf_kmem = kmem_cache_create("ip_fib_trie",
 					   LEAF_SIZE,
 					   0, SLAB_PANIC, NULL);
+
+	if (register_shrinker(&fib_shrinker))
+		panic("IP FIB: failed to register fib_shrinker\n");
 }
 
 struct fib_table *fib_trie_table(u32 id, struct fib_table *alias)
