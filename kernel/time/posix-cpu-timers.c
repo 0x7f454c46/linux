@@ -1243,6 +1243,8 @@ void set_process_cpu_timer(struct task_struct *tsk, unsigned int clock_idx,
 	tick_dep_set_signal(tsk->signal, TICK_DEP_BIT_POSIX_TIMER);
 }
 
+static long posix_cpu_nsleep_restart(struct restart_block *restart_block);
+
 static int do_cpu_nanosleep(const clockid_t which_clock, int flags,
 			    const struct timespec64 *rqtp)
 {
@@ -1330,6 +1332,7 @@ static int do_cpu_nanosleep(const clockid_t which_clock, int flags,
 		 * Report back to the user the time still remaining.
 		 */
 		restart = &current->restart_block;
+		restart->fn = posix_cpu_nsleep_restart;
 		restart->nanosleep.expires = expires;
 		if (restart->nanosleep.type != TT_NONE)
 			error = nanosleep_copyout(restart, &it.it_value);
@@ -1337,8 +1340,6 @@ static int do_cpu_nanosleep(const clockid_t which_clock, int flags,
 
 	return error;
 }
-
-static long posix_cpu_nsleep_restart(struct restart_block *restart_block);
 
 static int posix_cpu_nsleep(const clockid_t which_clock, int flags,
 			    const struct timespec64 *rqtp)
@@ -1361,7 +1362,6 @@ static int posix_cpu_nsleep(const clockid_t which_clock, int flags,
 		if (flags & TIMER_ABSTIME)
 			return -ERESTARTNOHAND;
 
-		restart_block->fn = posix_cpu_nsleep_restart;
 		restart_block->nanosleep.clockid = which_clock;
 	}
 	return error;

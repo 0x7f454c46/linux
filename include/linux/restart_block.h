@@ -21,6 +21,10 @@ enum timespec_type {
 
 /*
  * System call restart block.
+ *
+ * Safety rule: if you change anything inside @restart_block,
+ * set @fn to keep the structure in consistent state and prevent
+ * userspace tricks in the union.
  */
 struct restart_block {
 	long (*fn)(struct restart_block *);
