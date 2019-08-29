@@ -36,7 +36,7 @@
 
 
 /*
- * Estimate expected accuracy in ns from a timeval.
+ * Estimate expected accuracy in ns.
  *
  * After quite a bit of churning around, we've settled on
  * a simple thing of taking 0.1% of the timeout as the
@@ -49,22 +49,17 @@
 
 #define MAX_SLACK	(100 * NSEC_PER_MSEC)
 
-static long __estimate_accuracy(struct timespec64 *tv)
+static long __estimate_accuracy(ktime_t slack)
 {
-	long slack;
 	int divfactor = 1000;
 
-	if (tv->tv_sec < 0)
+	if (slack < 0)
 		return 0;
 
 	if (task_nice(current) > 0)
 		divfactor = divfactor / 5;
 
-	if (tv->tv_sec > MAX_SLACK / (NSEC_PER_SEC/divfactor))
-		return MAX_SLACK;
-
-	slack = tv->tv_nsec / divfactor;
-	slack += tv->tv_sec * (NSEC_PER_SEC/divfactor);
+	slack = ktime_divns(slack, divfactor);
 
 	if (slack > MAX_SLACK)
 		return MAX_SLACK;
@@ -72,27 +67,25 @@ static long __estimate_accuracy(struct timespec64 *tv)
 	return slack;
 }
 
-u64 select_estimate_accuracy(struct timespec64 *tv)
+u64 select_estimate_accuracy(struct timespec64 *timeout)
 {
-	u64 ret;
-	struct timespec64 now;
+	ktime_t now, slack;
 
 	/*
 	 * Realtime tasks get a slack of 0 for obvious reasons.
 	 */
-
 	if (rt_task(current))
 		return 0;
 
-	ktime_get_ts64(&now);
-	now = timespec64_sub(*tv, now);
-	ret = __estimate_accuracy(&now);
-	if (ret < current->timer_slack_ns)
+	now = ktime_get();
+	slack = now - timespec64_to_ktime(*timeout);
+
+	slack = __estimate_accuracy(slack);
+	if (slack < current->timer_slack_ns)
 		return current->timer_slack_ns;
-	return ret;
+
+	return slack;
 }
-
-
 
 struct poll_table_page {
 	struct poll_table_page * next;
