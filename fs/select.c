@@ -1001,7 +1001,7 @@ static long do_restart_poll(struct restart_block *restart_block)
 {
 	struct pollfd __user *ufds = restart_block->poll.ufds;
 	int nfds = restart_block->poll.nfds;
-	ktime_t timeout = restart_block->poll.timeout;
+	ktime_t timeout = restart_block->timeout;
 	int ret;
 
 	ret = do_sys_poll(ufds, nfds, timeout);
@@ -1030,10 +1030,10 @@ SYSCALL_DEFINE3(poll, struct pollfd __user *, ufds, unsigned int, nfds,
 		struct restart_block *restart_block;
 
 		restart_block = &current->restart_block;
-		restart_block->fn		= do_restart_poll;
-		restart_block->poll.ufds	= ufds;
-		restart_block->poll.nfds	= nfds;
-		restart_block->poll.timeout	= timeout;
+		restart_block->fn	 = do_restart_poll;
+		restart_block->poll.ufds = ufds;
+		restart_block->poll.nfds = nfds;
+		restart_block->timeout	 = timeout;
 
 		ret = -ERESTART_RESTARTBLOCK;
 	}

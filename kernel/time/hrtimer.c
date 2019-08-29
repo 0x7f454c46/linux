@@ -1709,7 +1709,7 @@ static long __sched hrtimer_nanosleep_restart(struct restart_block *restart)
 
 	hrtimer_init_on_stack(&t.timer, restart->nanosleep.clockid,
 				HRTIMER_MODE_ABS);
-	hrtimer_set_expires_tv64(&t.timer, restart->nanosleep.expires);
+	hrtimer_set_expires_tv64(&t.timer, restart->timeout);
 
 	ret = do_nanosleep(&t, HRTIMER_MODE_ABS);
 	destroy_hrtimer_on_stack(&t.timer);
@@ -1741,9 +1741,9 @@ long hrtimer_nanosleep(const struct timespec64 *rqtp,
 	}
 
 	restart = &current->restart_block;
-	restart->fn = hrtimer_nanosleep_restart;
+	restart->fn		   = hrtimer_nanosleep_restart;
 	restart->nanosleep.clockid = t.timer.base->clockid;
-	restart->nanosleep.expires = hrtimer_get_expires_tv64(&t.timer);
+	restart->timeout	   = hrtimer_get_expires_tv64(&t.timer);
 out:
 	destroy_hrtimer_on_stack(&t.timer);
 	return ret;

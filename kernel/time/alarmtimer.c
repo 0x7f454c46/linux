@@ -763,7 +763,7 @@ alarm_init_on_stack(struct alarm *alarm, enum alarmtimer_type type,
 static long __sched alarm_timer_nsleep_restart(struct restart_block *restart)
 {
 	enum  alarmtimer_type type = restart->nanosleep.clockid;
-	ktime_t exp = restart->nanosleep.expires;
+	ktime_t exp = restart->timeout;
 	struct alarm alarm;
 
 	alarm_init_on_stack(&alarm, type, alarmtimer_nsleep_wakeup);
@@ -816,9 +816,9 @@ static int alarm_timer_nsleep(const clockid_t which_clock, int flags,
 	if (flags == TIMER_ABSTIME)
 		return -ERESTARTNOHAND;
 
-	restart->fn = alarm_timer_nsleep_restart;
+	restart->fn		   = alarm_timer_nsleep_restart;
 	restart->nanosleep.clockid = type;
-	restart->nanosleep.expires = exp;
+	restart->timeout	   = exp;
 	return ret;
 }
 

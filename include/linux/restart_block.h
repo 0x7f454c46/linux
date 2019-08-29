@@ -27,6 +27,7 @@ enum timespec_type {
  * userspace tricks in the union.
  */
 struct restart_block {
+	s64 timeout;
 	long (*fn)(struct restart_block *);
 	union {
 		/* For futex_wait and futex_wait_requeue_pi */
@@ -35,7 +36,6 @@ struct restart_block {
 			u32 val;
 			u32 flags;
 			u32 bitset;
-			u64 time;
 		} futex;
 		/* For nanosleep */
 		struct {
@@ -45,11 +45,9 @@ struct restart_block {
 				struct __kernel_timespec __user *rmtp;
 				struct old_timespec32 __user *compat_rmtp;
 			};
-			u64 expires;
 		} nanosleep;
 		/* For poll */
 		struct {
-			u64 timeout;
 			struct pollfd __user *ufds;
 			int nfds;
 		} poll;
