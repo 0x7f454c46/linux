@@ -112,7 +112,7 @@ struct poll_wqueues {
 
 extern void poll_initwait(struct poll_wqueues *pwq);
 extern void poll_freewait(struct poll_wqueues *pwq);
-extern u64 select_estimate_accuracy(struct timespec64 *tv);
+extern u64 select_estimate_accuracy(ktime_t timeout);
 
 #define MAX_INT64_SECONDS (((s64)(~((u64)0)>>1)/HZ)-1)
 

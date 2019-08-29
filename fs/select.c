@@ -66,7 +66,7 @@ static long __estimate_accuracy(ktime_t slack)
 	return slack;
 }
 
-u64 select_estimate_accuracy(struct timespec64 *timeout)
+u64 select_estimate_accuracy(ktime_t timeout)
 {
 	ktime_t now, slack;
 
@@ -77,7 +77,7 @@ u64 select_estimate_accuracy(struct timespec64 *timeout)
 		return 0;
 
 	now = ktime_get();
-	slack = now - timespec64_to_ktime(*timeout);
+	slack = now - timeout;
 
 	slack = __estimate_accuracy(slack);
 	if (slack < current->timer_slack_ns)
@@ -490,8 +490,11 @@ static int do_select(int n, fd_set_bits *fds, struct timespec64 *end_time)
 		timed_out = 1;
 	}
 
-	if (end_time && !timed_out)
-		slack = select_estimate_accuracy(end_time);
+	if (end_time && !timed_out) {
+		expire = timespec64_to_ktime(*end_time);
+		to = &expire;
+		slack = select_estimate_accuracy(expire);
+	}
 
 	retval = 0;
 	for (;;) {
@@ -581,16 +584,6 @@ static int do_select(int n, fd_set_bits *fds, struct timespec64 *end_time)
 				continue;
 		}
 		busy_flag = 0;
-
-		/*
-		 * If this is the first loop and we have a timeout
-		 * given, then we convert to ktime_t and set the to
-		 * pointer to the expiry value.
-		 */
-		if (end_time && !to) {
-			expire = timespec64_to_ktime(*end_time);
-			to = &expire;
-		}
 
 		if (!poll_schedule_timeout(&table, TASK_INTERRUPTIBLE,
 					   to, slack))
@@ -876,8 +869,11 @@ static int do_poll(struct poll_list *list, struct poll_wqueues *wait,
 		timed_out = 1;
 	}
 
-	if (end_time && !timed_out)
-		slack = select_estimate_accuracy(end_time);
+	if (end_time && !timed_out) {
+		expire = timespec64_to_ktime(*end_time);
+		to = &expire;
+		slack = select_estimate_accuracy(expire);
+	}
 
 	for (;;) {
 		struct poll_list *walk;
@@ -929,16 +925,6 @@ static int do_poll(struct poll_list *list, struct poll_wqueues *wait,
 				continue;
 		}
 		busy_flag = 0;
-
-		/*
-		 * If this is the first loop and we have a timeout
-		 * given, then we convert to ktime_t and set the to
-		 * pointer to the expiry value.
-		 */
-		if (end_time && !to) {
-			expire = timespec64_to_ktime(*end_time);
-			to = &expire;
-		}
 
 		if (!poll_schedule_timeout(wait, TASK_INTERRUPTIBLE, to, slack))
 			timed_out = 1;

@@ -1836,9 +1836,9 @@ static int ep_poll(struct eventpoll *ep, struct epoll_event __user *events,
 	if (timeout > 0) {
 		struct timespec64 end_time = ep_set_mstimeout(timeout);
 
-		slack = select_estimate_accuracy(&end_time);
+		expires = timespec64_to_ktime(end_time);
 		to = &expires;
-		*to = timespec64_to_ktime(end_time);
+		slack = select_estimate_accuracy(expires);
 	} else if (timeout == 0) {
 		/*
 		 * Avoid the unnecessary trip to the wait queue loop, if the
