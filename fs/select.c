@@ -1056,54 +1056,58 @@ SYSCALL_DEFINE3(poll, struct pollfd __user *, ufds, unsigned int, nfds,
 	return ret;
 }
 
+static int do_sys_ppoll(struct pollfd __user *ufds, unsigned int nfds,
+			void __user *tsp, const void __user *sigmask,
+			size_t sigsetsize, enum poll_time_type pt_type)
+{
+	struct timespec64 ts, end_time, *to = NULL;
+	int ret;
+
+	if (tsp) {
+		switch (pt_type) {
+			case PT_TIMESPEC:
+				if (get_timespec64(&ts, tsp))
+					return -EFAULT;
+				break;
+			case PT_OLD_TIMESPEC:
+				if (get_old_timespec32(&ts, tsp))
+					return -EFAULT;
+				break;
+			default:
+				WARN_ON_ONCE(1);
+				return -ENOSYS;
+		}
+
+		to = &end_time;
+		if (poll_select_set_timeout(to, ts.tv_sec, ts.tv_nsec))
+			return -EINVAL;
+	}
+
+	if (!in_compat_syscall())
+		ret = set_user_sigmask(sigmask, sigsetsize);
+	else
+		ret = set_compat_user_sigmask(sigmask, sigsetsize);
+
+	if (ret)
+		return ret;
+
+	ret = do_sys_poll(ufds, nfds, to);
+	return poll_select_finish(&end_time, tsp, pt_type, ret);
+}
+
 SYSCALL_DEFINE5(ppoll, struct pollfd __user *, ufds, unsigned int, nfds,
 		struct __kernel_timespec __user *, tsp, const sigset_t __user *, sigmask,
 		size_t, sigsetsize)
 {
-	struct timespec64 ts, end_time, *to = NULL;
-	int ret;
-
-	if (tsp) {
-		if (get_timespec64(&ts, tsp))
-			return -EFAULT;
-
-		to = &end_time;
-		if (poll_select_set_timeout(to, ts.tv_sec, ts.tv_nsec))
-			return -EINVAL;
-	}
-
-	ret = set_user_sigmask(sigmask, sigsetsize);
-	if (ret)
-		return ret;
-
-	ret = do_sys_poll(ufds, nfds, to);
-	return poll_select_finish(&end_time, tsp, PT_TIMESPEC, ret);
+	return do_sys_ppoll(ufds, nfds, tsp, sigmask, sigsetsize, PT_TIMESPEC);
 }
 
 #if defined(CONFIG_COMPAT_32BIT_TIME) && !defined(CONFIG_64BIT)
-
 SYSCALL_DEFINE5(ppoll_time32, struct pollfd __user *, ufds, unsigned int, nfds,
 		struct old_timespec32 __user *, tsp, const sigset_t __user *, sigmask,
 		size_t, sigsetsize)
 {
-	struct timespec64 ts, end_time, *to = NULL;
-	int ret;
-
-	if (tsp) {
-		if (get_old_timespec32(&ts, tsp))
-			return -EFAULT;
-
-		to = &end_time;
-		if (poll_select_set_timeout(to, ts.tv_sec, ts.tv_nsec))
-			return -EINVAL;
-	}
-
-	ret = set_user_sigmask(sigmask, sigsetsize);
-	if (ret)
-		return ret;
-
-	ret = do_sys_poll(ufds, nfds, to);
-	return poll_select_finish(&end_time, tsp, PT_OLD_TIMESPEC, ret);
+	return do_sys_ppoll(ufds, nfds, tsp, sigmask, sigsetsize, PT_OLD_TIMESPEC);
 }
 #endif
 
@@ -1352,24 +1356,7 @@ COMPAT_SYSCALL_DEFINE5(ppoll_time32, struct pollfd __user *, ufds,
 	unsigned int,  nfds, struct old_timespec32 __user *, tsp,
 	const compat_sigset_t __user *, sigmask, compat_size_t, sigsetsize)
 {
-	struct timespec64 ts, end_time, *to = NULL;
-	int ret;
-
-	if (tsp) {
-		if (get_old_timespec32(&ts, tsp))
-			return -EFAULT;
-
-		to = &end_time;
-		if (poll_select_set_timeout(to, ts.tv_sec, ts.tv_nsec))
-			return -EINVAL;
-	}
-
-	ret = set_compat_user_sigmask(sigmask, sigsetsize);
-	if (ret)
-		return ret;
-
-	ret = do_sys_poll(ufds, nfds, to);
-	return poll_select_finish(&end_time, tsp, PT_OLD_TIMESPEC, ret);
+	return do_sys_ppoll(ufds, nfds, tsp, sigmask, sigsetsize, PT_OLD_TIMESPEC);
 }
 #endif
 
@@ -1378,24 +1365,7 @@ COMPAT_SYSCALL_DEFINE5(ppoll_time64, struct pollfd __user *, ufds,
 	unsigned int,  nfds, struct __kernel_timespec __user *, tsp,
 	const compat_sigset_t __user *, sigmask, compat_size_t, sigsetsize)
 {
-	struct timespec64 ts, end_time, *to = NULL;
-	int ret;
-
-	if (tsp) {
-		if (get_timespec64(&ts, tsp))
-			return -EFAULT;
-
-		to = &end_time;
-		if (poll_select_set_timeout(to, ts.tv_sec, ts.tv_nsec))
-			return -EINVAL;
-	}
-
-	ret = set_compat_user_sigmask(sigmask, sigsetsize);
-	if (ret)
-		return ret;
-
-	ret = do_sys_poll(ufds, nfds, to);
-	return poll_select_finish(&end_time, tsp, PT_TIMESPEC, ret);
+	return do_sys_ppoll(ufds, nfds, tsp, sigmask, sigsetsize, PT_TIMESPEC);
 }
 
 #endif
