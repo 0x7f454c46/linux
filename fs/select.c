@@ -1001,13 +1001,8 @@ static long do_restart_poll(struct restart_block *restart_block)
 {
 	struct pollfd __user *ufds = restart_block->poll.ufds;
 	int nfds = restart_block->poll.nfds;
-	ktime_t timeout = 0;
+	ktime_t timeout = restart_block->poll.timeout;
 	int ret;
-
-	if (restart_block->poll.has_timeout) {
-		timeout = ktime_set(restart_block->poll.tv_sec,
-				    restart_block->poll.tv_nsec);
-	}
 
 	ret = do_sys_poll(ufds, nfds, timeout);
 
@@ -1021,14 +1016,12 @@ static long do_restart_poll(struct restart_block *restart_block)
 SYSCALL_DEFINE3(poll, struct pollfd __user *, ufds, unsigned int, nfds,
 		int, timeout_msecs)
 {
-	struct timespec64 end_time;
 	ktime_t timeout = 0;
 	int ret;
 
 	if (timeout_msecs >= 0) {
-		poll_select_set_timeout(&end_time, timeout_msecs / MSEC_PER_SEC,
-			NSEC_PER_MSEC * (timeout_msecs % MSEC_PER_SEC));
-		timeout = timespec64_to_ktime(end_time);
+		timeout = ktime_add_ms(0, timeout_msecs);
+		timeout = ktime_add_safe(ktime_get(), timeout);
 	}
 
 	ret = do_sys_poll(ufds, nfds, timeout);
@@ -1037,16 +1030,10 @@ SYSCALL_DEFINE3(poll, struct pollfd __user *, ufds, unsigned int, nfds,
 		struct restart_block *restart_block;
 
 		restart_block = &current->restart_block;
-		restart_block->fn = do_restart_poll;
-		restart_block->poll.ufds = ufds;
-		restart_block->poll.nfds = nfds;
-
-		if (timeout_msecs >= 0) {
-			restart_block->poll.tv_sec = end_time.tv_sec;
-			restart_block->poll.tv_nsec = end_time.tv_nsec;
-			restart_block->poll.has_timeout = 1;
-		} else
-			restart_block->poll.has_timeout = 0;
+		restart_block->fn		= do_restart_poll;
+		restart_block->poll.ufds	= ufds;
+		restart_block->poll.nfds	= nfds;
+		restart_block->poll.timeout	= timeout;
 
 		ret = -ERESTART_RESTARTBLOCK;
 	}
