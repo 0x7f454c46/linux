@@ -51,15 +51,14 @@
 
 static long __estimate_accuracy(ktime_t slack)
 {
-	int divfactor = 1000;
-
 	if (slack < 0)
 		return 0;
 
-	if (task_nice(current) > 0)
-		divfactor = divfactor / 5;
+	/* A bit more precise than 0.1% */
+	slack = slack >> 10;
 
-	slack = ktime_divns(slack, divfactor);
+	if (task_nice(current) > 0)
+		slack = slack * 5;
 
 	if (slack > MAX_SLACK)
 		return MAX_SLACK;
