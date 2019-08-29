@@ -854,25 +854,22 @@ out:
 }
 
 static int do_poll(struct poll_list *list, struct poll_wqueues *wait,
-		   struct timespec64 *end_time)
+		   ktime_t end_time)
 {
 	poll_table* pt = &wait->pt;
-	ktime_t expire, *to = NULL;
+	ktime_t *to = NULL;
 	int timed_out = 0, count = 0;
 	u64 slack = 0;
 	__poll_t busy_flag = net_busy_loop_on() ? POLL_BUSY_LOOP : 0;
 	unsigned long busy_start = 0;
 
 	/* Optimise the no-wait case */
-	if (end_time && !end_time->tv_sec && !end_time->tv_nsec) {
+	if (ktime_compare(ktime_get(), end_time) >= 0) {
 		pt->_qproc = NULL;
 		timed_out = 1;
-	}
-
-	if (end_time && !timed_out) {
-		expire = timespec64_to_ktime(*end_time);
-		to = &expire;
-		slack = select_estimate_accuracy(expire);
+	} else {
+		to = &end_time;
+		slack = select_estimate_accuracy(end_time);
 	}
 
 	for (;;) {
@@ -936,7 +933,7 @@ static int do_poll(struct poll_list *list, struct poll_wqueues *wait,
 			sizeof(struct pollfd))
 
 static int do_sys_poll(struct pollfd __user *ufds, unsigned int nfds,
-		struct timespec64 *end_time)
+		       ktime_t end_time)
 {
 	struct poll_wqueues table;
 	int err = -EFAULT, fdcount, len;
@@ -1004,16 +1001,15 @@ static long do_restart_poll(struct restart_block *restart_block)
 {
 	struct pollfd __user *ufds = restart_block->poll.ufds;
 	int nfds = restart_block->poll.nfds;
-	struct timespec64 *to = NULL, end_time;
+	ktime_t timeout = 0;
 	int ret;
 
 	if (restart_block->poll.has_timeout) {
-		end_time.tv_sec = restart_block->poll.tv_sec;
-		end_time.tv_nsec = restart_block->poll.tv_nsec;
-		to = &end_time;
+		timeout = ktime_set(restart_block->poll.tv_sec,
+				    restart_block->poll.tv_nsec);
 	}
 
-	ret = do_sys_poll(ufds, nfds, to);
+	ret = do_sys_poll(ufds, nfds, timeout);
 
 	if (ret == -ERESTARTNOHAND) {
 		restart_block->fn = do_restart_poll;
@@ -1025,16 +1021,17 @@ static long do_restart_poll(struct restart_block *restart_block)
 SYSCALL_DEFINE3(poll, struct pollfd __user *, ufds, unsigned int, nfds,
 		int, timeout_msecs)
 {
-	struct timespec64 end_time, *to = NULL;
+	struct timespec64 end_time;
+	ktime_t timeout = 0;
 	int ret;
 
 	if (timeout_msecs >= 0) {
-		to = &end_time;
-		poll_select_set_timeout(to, timeout_msecs / MSEC_PER_SEC,
+		poll_select_set_timeout(&end_time, timeout_msecs / MSEC_PER_SEC,
 			NSEC_PER_MSEC * (timeout_msecs % MSEC_PER_SEC));
+		timeout = timespec64_to_ktime(end_time);
 	}
 
-	ret = do_sys_poll(ufds, nfds, to);
+	ret = do_sys_poll(ufds, nfds, timeout);
 
 	if (ret == -ERESTARTNOHAND) {
 		struct restart_block *restart_block;
@@ -1060,7 +1057,8 @@ static int do_sys_ppoll(struct pollfd __user *ufds, unsigned int nfds,
 			void __user *tsp, const void __user *sigmask,
 			size_t sigsetsize, enum poll_time_type pt_type)
 {
-	struct timespec64 ts, end_time, *to = NULL;
+	struct timespec64 ts, *to = NULL;
+	ktime_t timeout = 0;
 	int ret;
 
 	if (tsp) {
@@ -1078,9 +1076,10 @@ static int do_sys_ppoll(struct pollfd __user *ufds, unsigned int nfds,
 				return -ENOSYS;
 		}
 
-		to = &end_time;
-		if (poll_select_set_timeout(to, ts.tv_sec, ts.tv_nsec))
+		to = &ts;
+		if (poll_select_set_timeout(&ts, ts.tv_sec, ts.tv_nsec))
 			return -EINVAL;
+		timeout = timespec64_to_ktime(ts);
 	}
 
 	if (!in_compat_syscall())
@@ -1091,8 +1090,8 @@ static int do_sys_ppoll(struct pollfd __user *ufds, unsigned int nfds,
 	if (ret)
 		return ret;
 
-	ret = do_sys_poll(ufds, nfds, to);
-	return poll_select_finish(&end_time, tsp, pt_type, ret);
+	ret = do_sys_poll(ufds, nfds, timeout);
+	return poll_select_finish(to, tsp, pt_type, ret);
 }
 
 SYSCALL_DEFINE5(ppoll, struct pollfd __user *, ufds, unsigned int, nfds,
