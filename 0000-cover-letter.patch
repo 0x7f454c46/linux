@@ -1,0 +1,78 @@
+From 85f2da9d0b6fa50effdddea84aab4caa3a068587 Mon Sep 17 00:00:00 2001
+From: Dmitry Safonov <dima@arista.com>
+Date: Fri, 30 Aug 2019 03:04:48 +0100
+Subject: [RFC 00/10] restart_block: Provide ptrace API for dumping
+
+Hi,
+
+I'm trying to address an issue in CRIU (Checkpoint Restore In Userspace)
+about timed syscalls restart. It's not possible to use restart_syscall()
+as the majority of applications does, as after restore the kernel doesn't
+know anything about a syscall that may have been interrupted on
+checkpoint. That's because the tasks are re-created from scratch and so
+there isn't task_struct::restart_block set on a new task.
+
+As a preparation, I did unify timeouts for different syscalls in
+restart_block - this part went well and might even make sense.
+
+On contrary, I'm struggling with the new ptrace() request API:
+at this moment the power of my 2-coffee-cups volumed brain can only
+produce UAPI design with dumping all members from restart_block..
+[not included in this RFC]
+
+So, I decided to send it early, before I did all monkey-business to
+memcpy() the whole content of restart_block.
+
+At this moment, it seems to me that the easiest way would be:
+1. Name the union in restart_block
+2. Add ptrace() request to dump the union
+3. Add a second prctl() API to restore the union [members will need
+   verification]
+
+I'll do it in the version 1, but maybe I'm missing something and there
+is a better way?
+
+Cc: Adrian Reber <adrian@lisas.de>
+Cc: Alexander Viro <viro@zeniv.linux.org.uk>
+Cc: Andrei Vagin <avagin@openvz.org>
+Cc: Andy Lutomirski <luto@kernel.org>
+Cc: Cyrill Gorcunov <gorcunov@openvz.org>
+Cc: Dmitry Safonov <0x7f454c46@gmail.com>
+Cc: Ingo Molnar <mingo@redhat.com>
+Cc: Oleg Nesterov <oleg@redhat.com>
+Cc: Pavel Emelyanov <xemul@virtuozzo.com>
+Cc: Thomas Gleixner <tglx@linutronix.de>
+Cc: containers@lists.linux-foundation.org
+Cc: criu@openvz.or
+Cc: linux-api@vger.kernel.org
+Cc: linux-fsdevel@vger.kernel.org
+
+Dmitry Safonov (10):
+  futex: Remove unused uaddr2 in restart_block
+  restart_block: Prevent userspace set part of the block
+  select: Convert __esimate_accuracy() to ktime_t
+  select: Micro-optimise __estimate_accuracy()
+  select: Convert select_estimate_accuracy() to take ktime_t
+  select: Extract common code into do_sys_ppoll()
+  select: Use ktime_t in do_sys_poll() and do_poll()
+  select/restart_block: Convert poll's timeout to u64
+  restart_block: Make common timeout
+  ptrace: Introduce PTRACE_GET_RESTART_TIMEOUT
+
+ fs/eventpoll.c                 |   4 +-
+ fs/select.c                    | 214 ++++++++++++---------------------
+ include/linux/poll.h           |   2 +-
+ include/linux/restart_block.h  |  11 +-
+ include/uapi/linux/ptrace.h    |   6 +
+ kernel/futex.c                 |  14 +--
+ kernel/ptrace.c                |  28 +++++
+ kernel/time/alarmtimer.c       |   6 +-
+ kernel/time/hrtimer.c          |  14 ++-
+ kernel/time/posix-cpu-timers.c |  10 +-
+ kernel/time/posix-stubs.c      |   8 +-
+ kernel/time/posix-timers.c     |   8 +-
+ 12 files changed, 149 insertions(+), 176 deletions(-)
+
+-- 
+2.22.0
+
