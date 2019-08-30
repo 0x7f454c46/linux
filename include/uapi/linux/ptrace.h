@@ -101,6 +101,12 @@ struct ptrace_syscall_info {
 	};
 };
 
+#define PTRACE_GET_RESTART_TIMEOUT	0x420f
+struct ptrace_restart_timeout {
+	__s64 timeout;
+	char  fn[128];
+};
+
 /*
  * These values are stored in task->ptrace_message
  * by tracehook_report_syscall_* to describe the current syscall-stop.

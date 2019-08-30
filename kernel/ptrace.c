@@ -994,6 +994,30 @@ ptrace_get_syscall_info(struct task_struct *child, unsigned long user_size,
 }
 #endif /* CONFIG_HAVE_ARCH_TRACEHOOK */
 
+static int ptrace_get_restart_timeout(struct task_struct *child,
+		unsigned long user_size, void __user *datavp)
+{
+	unsigned long fn = (unsigned long)child->restart_block.fn;
+	struct ptrace_restart_timeout restart = {};
+	char fn_name[KSYM_NAME_LEN];
+	int err;
+
+	err = lookup_symbol_name(fn, fn_name);
+	if (err)
+		return err;
+
+	strncpy(restart.fn, fn_name, ARRAY_SIZE(restart.fn));
+
+	if (fn != (unsigned long)do_no_restart_syscall) {
+		if (child->restart_block.timeout == KTIME_MAX)
+			restart.timeout = -1;
+		else
+			restart.timeout = child->restart_block.timeout;
+	}
+
+	return copy_to_user(datavp, &restart, user_size) ? -EFAULT : user_size;
+}
+
 int ptrace_request(struct task_struct *child, long request,
 		   unsigned long addr, unsigned long data)
 {
@@ -1214,6 +1238,10 @@ int ptrace_request(struct task_struct *child, long request,
 		ret = ptrace_get_syscall_info(child, addr, datavp);
 		break;
 #endif
+
+	case PTRACE_GET_RESTART_TIMEOUT:
+		ret = ptrace_get_restart_timeout(child, addr, datavp);
+		break;
 
 	case PTRACE_SECCOMP_GET_FILTER:
 		ret = seccomp_get_filter(child, addr, datavp);
