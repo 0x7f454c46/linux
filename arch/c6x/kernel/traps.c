@@ -344,12 +344,13 @@ asmlinkage int process_exception(struct pt_regs *regs)
 
 static int kstack_depth_to_print = 48;
 
-static void show_trace(unsigned long *stack, unsigned long *endstack)
+static void show_trace(unsigned long *stack, unsigned long *endstack,
+		       const char *loglvl)
 {
 	unsigned long addr;
 	int i;
 
-	pr_debug("Call trace:");
+	printk("%sCall trace:", loglvl);
 	i = 0;
 	while (stack + 1 <= endstack) {
 		addr = *stack++;
@@ -364,16 +365,17 @@ static void show_trace(unsigned long *stack, unsigned long *endstack)
 		if (__kernel_text_address(addr)) {
 #ifndef CONFIG_KALLSYMS
 			if (i % 5 == 0)
-				pr_debug("\n	    ");
+				printk("%s\n	    ", loglvl);
 #endif
-			pr_debug(" [<%08lx>] %pS\n", addr, (void *)addr);
+			printk("%s [<%08lx>] %pS\n", loglvl, addr, (void *)addr);
 			i++;
 		}
 	}
-	pr_debug("\n");
+	printk("%s\n", loglvl);
 }
 
-void show_stack(struct task_struct *task, unsigned long *stack)
+void show_stack_loglvl(struct task_struct *task, unsigned long *stack,
+		const char *loglvl)
 {
 	unsigned long *p, *endstack;
 	int i;
@@ -389,7 +391,7 @@ void show_stack(struct task_struct *task, unsigned long *stack)
 	endstack = (unsigned long *)(((unsigned long)stack + THREAD_SIZE - 1)
 				     & -THREAD_SIZE);
 
-	pr_debug("Stack from %08lx:", (unsigned long)stack);
+	printk("%sStack from %08lx:", loglvl, (unsigned long)stack);
 	for (i = 0, p = stack; i < kstack_depth_to_print; i++) {
 		if (p + 1 > endstack)
 			break;
@@ -398,7 +400,12 @@ void show_stack(struct task_struct *task, unsigned long *stack)
 		pr_cont(" %08lx", *p++);
 	}
 	pr_cont("\n");
-	show_trace(stack, endstack);
+	show_trace(stack, endstack, loglvl);
+}
+
+void show_stack(struct task_struct *task, unsigned long *stack)
+{
+	show_stack_loglvl(task, stack, KERN_DEBUG);
 }
 
 int is_valid_bugaddr(unsigned long addr)
