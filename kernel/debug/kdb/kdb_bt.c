@@ -21,22 +21,19 @@
 
 static void kdb_show_stack(struct task_struct *p, void *addr)
 {
-	int old_lvl = console_loglevel;
-	console_loglevel = CONSOLE_LOGLEVEL_MOTORMOUTH;
 	kdb_trap_printk++;
 	kdb_set_current_task(p);
 	if (addr) {
-		show_stack((struct task_struct *)p, addr);
+		show_stack_loglvl(p, addr, KERN_EMERG);
 	} else if (kdb_current_regs) {
 #ifdef CONFIG_X86
-		show_stack(p, &kdb_current_regs->sp);
+		show_stack_loglvl(p, &kdb_current_regs->sp, KERN_EMERG);
 #else
-		show_stack(p, NULL);
+		show_stack_loglvl(p, NULL, KERN_EMERG);
 #endif
 	} else {
-		show_stack(p, NULL);
+		show_stack_loglvl(p, NULL, KERN_EMERG);
 	}
-	console_loglevel = old_lvl;
 	kdb_trap_printk--;
 }
 
