@@ -479,20 +479,24 @@ void show_regs(struct pt_regs * regs)
 
 static int show_trace_cb(struct stackframe *frame, void *data)
 {
+	const char *loglvl = data;
+
 	if (kernel_text_address(frame->pc))
-		pr_cont(" [<%08lx>] %pB\n", frame->pc, (void *)frame->pc);
+		printk("%s [<%08lx>] %pB\n",
+			loglvl, frame->pc, (void *)frame->pc);
 	return 0;
 }
 
-void show_trace(struct task_struct *task, unsigned long *sp)
+static void show_trace(struct task_struct *task, unsigned long *sp,
+		       const char *loglvl)
 {
 	if (!sp)
 		sp = stack_pointer(task);
 
-	pr_info("Call Trace:\n");
-	walk_stackframe(sp, show_trace_cb, NULL);
+	printk("%sCall Trace:\n", loglvl);
+	walk_stackframe(sp, show_trace_cb, (void *)loglvl);
 #ifndef CONFIG_KALLSYMS
-	pr_cont("\n");
+	printk("%s\n", loglvl);
 #endif
 }
 
@@ -516,7 +520,7 @@ void show_stack(struct task_struct *task, unsigned long *sp)
 		if (i % 8 == 7)
 			pr_cont("\n");
 	}
-	show_trace(task, stack);
+	show_trace(task, stack, KERN_INFO);
 }
 
 DEFINE_SPINLOCK(die_lock);
