@@ -502,7 +502,8 @@ static void show_trace(struct task_struct *task, unsigned long *sp,
 
 static int kstack_depth_to_print = 24;
 
-void show_stack(struct task_struct *task, unsigned long *sp)
+void show_stack_loglvl(struct task_struct *task, unsigned long *sp,
+		       const char *loglvl)
 {
 	int i = 0;
 	unsigned long *stack;
@@ -511,16 +512,21 @@ void show_stack(struct task_struct *task, unsigned long *sp)
 		sp = stack_pointer(task);
 	stack = sp;
 
-	pr_info("Stack:\n");
+	printk("%sStack:\n", loglvl);
 
 	for (i = 0; i < kstack_depth_to_print; i++) {
 		if (kstack_end(sp))
 			break;
-		pr_cont(" %08lx", *sp++);
+		printk("%s %08lx", loglvl, *sp++);
 		if (i % 8 == 7)
-			pr_cont("\n");
+			printk("%s\n", loglvl);
 	}
-	show_trace(task, stack, KERN_INFO);
+	show_trace(task, stack, loglvl);
+}
+
+void show_stack(struct task_struct *task, unsigned long *sp)
+{
+	show_stack_loglvl(task, sp, KERN_INFO);
 }
 
 DEFINE_SPINLOCK(die_lock);
