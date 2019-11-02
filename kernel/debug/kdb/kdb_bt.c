@@ -24,15 +24,15 @@ static void kdb_show_stack(struct task_struct *p, void *addr)
 	kdb_trap_printk++;
 	kdb_set_current_task(p);
 	if (addr) {
-		show_stack_loglvl(p, addr, KERN_EMERG);
+		show_stack(p, addr, KERN_EMERG);
 	} else if (kdb_current_regs) {
 #ifdef CONFIG_X86
-		show_stack_loglvl(p, &kdb_current_regs->sp, KERN_EMERG);
+		show_stack(p, &kdb_current_regs->sp, KERN_EMERG);
 #else
-		show_stack_loglvl(p, NULL, KERN_EMERG);
+		show_stack(p, NULL, KERN_EMERG);
 #endif
 	} else {
-		show_stack_loglvl(p, NULL, KERN_EMERG);
+		show_stack(p, NULL, KERN_EMERG);
 	}
 	kdb_trap_printk--;
 }

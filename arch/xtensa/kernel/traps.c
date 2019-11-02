@@ -502,8 +502,7 @@ static void show_trace(struct task_struct *task, unsigned long *sp,
 
 static int kstack_depth_to_print = 24;
 
-void show_stack_loglvl(struct task_struct *task, unsigned long *sp,
-		       const char *loglvl)
+void show_stack(struct task_struct *task, unsigned long *sp, const char *loglvl)
 {
 	int i = 0;
 	unsigned long *stack;
@@ -524,11 +523,6 @@ void show_stack_loglvl(struct task_struct *task, unsigned long *sp,
 	show_trace(task, stack, loglvl);
 }
 
-void show_stack(struct task_struct *task, unsigned long *sp)
-{
-	show_stack_loglvl(task, sp, KERN_INFO);
-}
-
 DEFINE_SPINLOCK(die_lock);
 
 void die(const char * str, struct pt_regs * regs, long err)
@@ -542,7 +536,7 @@ void die(const char * str, struct pt_regs * regs, long err)
 		IS_ENABLED(CONFIG_PREEMPT) ? " PREEMPT" : "");
 	show_regs(regs);
 	if (!user_mode(regs))
-		show_stack(NULL, (unsigned long*)regs->areg[1]);
+		show_stack(NULL, (unsigned long *)regs->areg[1], KERN_INFO);
 
 	add_taint(TAINT_DIE, LOCKDEP_NOW_UNRELIABLE);
 	spin_unlock_irq(&die_lock);
