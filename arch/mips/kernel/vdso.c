@@ -33,9 +33,12 @@ struct vdso_data *vdso_data = mips_vdso_data.data;
  * runtime.
  */
 static struct page *no_pages[] = { NULL };
+int vdso_mremap(const struct vm_special_mapping *sm,
+		struct vm_area_struct *new_vma);
 static struct vm_special_mapping vdso_vvar_mapping = {
 	.name = "[vvar]",
 	.pages = no_pages,
+	.mremap = vdso_mremap,
 };
 
 static void __init init_vdso_image(struct mips_vdso_image *image)
@@ -185,4 +188,18 @@ int arch_setup_additional_pages(struct linux_binprm *bprm, int uses_interp)
 out:
 	up_write(&mm->mmap_sem);
 	return ret;
+}
+
+static int vdso_mremap(const struct vm_special_mapping *sm,
+		       struct vm_area_struct *new_vma)
+{
+	unsigned long new_size = new_vma->vm_end - new_vma->vm_start;
+	struct mips_vdso_image *image = current->thread.abi->vdso;
+
+	if (image->size != new_size)
+		return -EINVAL;
+
+	current->mm->context.vdso = (void *)new_vma->vm_start;
+
+	return 0;
 }
