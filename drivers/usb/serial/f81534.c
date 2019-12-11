@@ -1238,10 +1238,8 @@ static void f81534_process_per_serial_block(struct usb_serial_port *port,
 			schedule_work(&port_priv->lsr_work);
 		}
 
-		if (port->port.console && port->sysrq) {
-			if (usb_serial_handle_sysrq_char(port, data[i]))
-				continue;
-		}
+		if (usb_serial_handle_sysrq_char(port, data[i]))
+			continue;
 
 		tty_insert_flip_char(&port->port, data[i], tty_flag);
 	}
