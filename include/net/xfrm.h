@@ -2000,6 +2000,16 @@ static inline int xfrm_tunnel_check(struct sk_buff *skb, struct xfrm_state *x,
 	return 0;
 }
 
+#ifdef CONFIG_XFRM_USER_COMPAT
+extern int xfrm_alloc_compat(struct sk_buff *skb);
+extern const int xfrm_msg_min[XFRM_NR_MSGTYPES];
+#else
+static inline int xfrm_alloc_compat(struct sk_buff *skb)
+{
+	return 0;
+}
+#endif
+
 #if IS_ENABLED(CONFIG_IPV6)
 static inline bool xfrm6_local_dontfrag(const struct sock *sk)
 {
