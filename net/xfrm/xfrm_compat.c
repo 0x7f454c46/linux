@@ -272,9 +272,8 @@ static int xfrm_xlate64(struct sk_buff *dst, const struct nlmsghdr *nlh_src)
 	return 0;
 }
 
-int xfrm_alloc_compat(struct sk_buff *skb)
+int __xfrm_alloc_compat(struct sk_buff *skb, const struct nlmsghdr *nlh_src)
 {
-	const struct nlmsghdr *nlh_src = nlmsg_hdr(skb);
 	u16 type = nlh_src->nlmsg_type - XFRM_MSG_BASE;
 	struct sk_buff *new = NULL;
 	int err;
@@ -299,4 +298,11 @@ int xfrm_alloc_compat(struct sk_buff *skb)
 	}
 
 	return 0;
+}
+
+int xfrm_alloc_compat(struct sk_buff *skb)
+{
+	const struct nlmsghdr *nlh_src = nlmsg_hdr(skb);
+
+	return __xfrm_alloc_compat(skb, nlh_src);
 }

@@ -2002,9 +2002,15 @@ static inline int xfrm_tunnel_check(struct sk_buff *skb, struct xfrm_state *x,
 
 #ifdef CONFIG_XFRM_USER_COMPAT
 extern int xfrm_alloc_compat(struct sk_buff *skb);
+extern int __xfrm_alloc_compat(struct sk_buff *skb, const struct nlmsghdr *nlh);
 extern const int xfrm_msg_min[XFRM_NR_MSGTYPES];
 #else
 static inline int xfrm_alloc_compat(struct sk_buff *skb)
+{
+	return 0;
+}
+static inline int __xfrm_alloc_compat(struct sk_buff *skb,
+				      const struct nlmsghdr *nlh)
 {
 	return 0;
 }

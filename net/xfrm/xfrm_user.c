@@ -992,6 +992,13 @@ static int dump_one_state(struct xfrm_state *x, int count, void *ptr)
 		return err;
 	}
 	nlmsg_end(skb, nlh);
+
+	err = __xfrm_alloc_compat(skb, nlh);
+	if (err) {
+		nlmsg_cancel(skb, nlh);
+		return err;
+	}
+
 	return 0;
 }
 
@@ -1362,6 +1369,12 @@ static int xfrm_alloc_userspi(struct sk_buff *skb, struct nlmsghdr *nlh,
 	resp_skb = xfrm_state_netlink(skb, x, nlh->nlmsg_seq);
 	if (IS_ERR(resp_skb)) {
 		err = PTR_ERR(resp_skb);
+		goto out;
+	}
+
+	err = xfrm_alloc_compat(skb);
+	if (err) {
+		kfree_skb(resp_skb);
 		goto out;
 	}
 
@@ -1795,6 +1808,13 @@ static int dump_one_policy(struct xfrm_policy *xp, int dir, int count, void *ptr
 		return err;
 	}
 	nlmsg_end(skb, nlh);
+
+	err = __xfrm_alloc_compat(skb, nlh);
+	if (err) {
+		nlmsg_cancel(skb, nlh);
+		return err;
+	}
+
 	return 0;
 }
 
