@@ -2009,6 +2009,7 @@ extern const int xfrm_msg_min[XFRM_NR_MSGTYPES];
 extern struct nlmsghdr *xfrm_user_rcv_msg_compat(const struct nlmsghdr *nlh,
 			int maxtype, const struct nla_policy *policy,
 			struct netlink_ext_ack *extack);
+extern int xfrm_user_policy_compat(u8 **pdata32, int optlen);
 #else
 static inline int xfrm_alloc_compat(struct sk_buff *skb)
 {
@@ -2024,6 +2025,10 @@ static inline struct nlmsghdr *xfrm_user_rcv_msg_compat(const struct nlmsghdr *n
 			struct netlink_ext_ack *extack)
 {
 	return ERR_PTR(-EOPNOTSUPP);
+}
+static inline int xfrm_user_policy_compat(u8 **pdata32, int optlen)
+{
+	return -EOPNOTSUPP;
 }
 #endif
 

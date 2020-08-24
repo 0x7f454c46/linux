@@ -582,3 +582,28 @@ struct nlmsghdr *xfrm_user_rcv_msg_compat(const struct nlmsghdr *h32,
 
 	return h64;
 }
+
+int xfrm_user_policy_compat(u8 **pdata32, int optlen)
+{
+	struct compat_xfrm_userpolicy_info *p = (void *)*pdata32;
+	u8 *src_templates, *dst_templates;
+	u8 *data64;
+
+	if (optlen < sizeof(*p))
+		return -EINVAL;
+
+	data64 = kmalloc_track_caller(optlen + 4, GFP_USER | __GFP_NOWARN);
+	if (!data64)
+		return -ENOMEM;
+
+	memcpy(data64, *pdata32, sizeof(*p));
+	memset(data64 + sizeof(*p), 0, 4);
+
+	src_templates = *pdata32 + sizeof(*p);
+	dst_templates = data64 + sizeof(*p) + 4;
+	memcpy(dst_templates, src_templates, optlen - sizeof(*p));
+
+	kfree(*pdata32);
+	*pdata32 = data64;
+	return 0;
+}
