@@ -2000,10 +2000,15 @@ static inline int xfrm_tunnel_check(struct sk_buff *skb, struct xfrm_state *x,
 	return 0;
 }
 
+extern const struct nla_policy xfrma_policy[XFRMA_MAX+1];
+
 #ifdef CONFIG_XFRM_USER_COMPAT
 extern int xfrm_alloc_compat(struct sk_buff *skb);
 extern int __xfrm_alloc_compat(struct sk_buff *skb, const struct nlmsghdr *nlh);
 extern const int xfrm_msg_min[XFRM_NR_MSGTYPES];
+extern struct nlmsghdr *xfrm_user_rcv_msg_compat(const struct nlmsghdr *nlh,
+			int maxtype, const struct nla_policy *policy,
+			struct netlink_ext_ack *extack);
 #else
 static inline int xfrm_alloc_compat(struct sk_buff *skb)
 {
@@ -2013,6 +2018,12 @@ static inline int __xfrm_alloc_compat(struct sk_buff *skb,
 				      const struct nlmsghdr *nlh)
 {
 	return 0;
+}
+static inline struct nlmsghdr *xfrm_user_rcv_msg_compat(const struct nlmsghdr *nlh,
+			int maxtype, const struct nla_policy *policy,
+			struct netlink_ext_ack *extack)
+{
+	return ERR_PTR(-EOPNOTSUPP);
 }
 #endif
 
