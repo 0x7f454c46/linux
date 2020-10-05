@@ -276,9 +276,4 @@ do {									    \
 			    (unsigned long)current->mm->context.vdso_base); \
 } while (0)
 
-struct linux_binprm;
-
-#define ARCH_HAS_SETUP_ADDITIONAL_PAGES 1
-int arch_setup_additional_pages(struct linux_binprm *, int);
-
 #endif

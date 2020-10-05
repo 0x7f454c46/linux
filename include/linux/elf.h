@@ -104,4 +104,16 @@ static inline int arch_elf_adjust_prot(int prot,
 }
 #endif
 
+struct linux_binprm;
+#ifdef CONFIG_ARCH_HAS_SETUP_ADDITIONAL_PAGES
+extern int arch_setup_additional_pages(struct linux_binprm *bprm,
+				       int uses_interp);
+#else
+static inline int arch_setup_additional_pages(struct linux_binprm *bprm,
+				       int uses_interp)
+{
+	return 0;
+}
+#endif
+
 #endif /* _LINUX_ELF_H */
