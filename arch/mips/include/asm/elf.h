@@ -480,11 +480,6 @@ do {									\
 		    (unsigned long)current->mm->context.vdso);		\
 } while (0)
 
-#define ARCH_HAS_SETUP_ADDITIONAL_PAGES 1
-struct linux_binprm;
-extern int arch_setup_additional_pages(struct linux_binprm *bprm,
-				       int uses_interp);
-
 #ifdef CONFIG_MIPS_FP_SUPPORT
 
 struct arch_elf_state {
