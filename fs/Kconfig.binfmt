@@ -39,6 +39,9 @@ config ARCH_BINFMT_ELF_STATE
 config ARCH_HAVE_ELF_PROT
 	bool
 
+config ARCH_HAS_SETUP_ADDITIONAL_PAGES
+	bool
+
 config ARCH_USE_GNU_PROPERTY
 	bool
 

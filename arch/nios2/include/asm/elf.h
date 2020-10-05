@@ -28,10 +28,6 @@
 /* regs is struct pt_regs, pr_reg is elf_gregset_t (which is
    now struct_user_regs, they are different) */
 
-#define ARCH_HAS_SETUP_ADDITIONAL_PAGES	1
-struct linux_binprm;
-extern int arch_setup_additional_pages(struct linux_binprm *bprm,
-	int uses_interp);
 #define ELF_CORE_COPY_REGS(pr_reg, regs)				\
 { do {									\
 	/* Bleech. */							\
