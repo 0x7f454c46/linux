@@ -111,7 +111,7 @@ unsigned long inline vdso_random_addr(unsigned long vdso_mapping_len)
 	return addr;
 }
 
-int arch_setup_additional_pages(struct linux_binprm *bprm, int uses_interp)
+int arch_setup_additional_pages(unsigned long *sysinfo_ehdr)
 {
 	struct mm_struct *mm = current->mm;
 	unsigned long vdso_base, vdso_text_len, vdso_mapping_len;
@@ -176,6 +176,7 @@ int arch_setup_additional_pages(struct linux_binprm *bprm, int uses_interp)
 	/*Map vdso to user space */
 	vdso_base += PAGE_SIZE;
 	mm->context.vdso = (void *)vdso_base;
+	*sysinfo_ehdr = vdso_base;
 	vma = _install_special_mapping(mm, vdso_base, vdso_text_len,
 				       VM_READ | VM_EXEC |
 				       VM_MAYREAD | VM_MAYWRITE | VM_MAYEXEC,

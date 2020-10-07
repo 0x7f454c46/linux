@@ -183,6 +183,7 @@ static int load_elf_fdpic_binary(struct linux_binprm *bprm)
 {
 	struct elf_fdpic_params exec_params, interp_params;
 	struct pt_regs *regs = current_pt_regs();
+	unsigned long sysinfo_ehdr = 0;
 	struct elf_phdr *phdr;
 	unsigned long stack_size, entryaddr;
 #ifdef ELF_FDPIC_PLAT_INIT
@@ -375,7 +376,7 @@ static int load_elf_fdpic_binary(struct linux_binprm *bprm)
 	if (retval < 0)
 		goto error;
 
-	retval = arch_setup_additional_pages(bprm, !!interpreter_name);
+	retval = arch_setup_additional_pages(&sysinfo_ehdr);
 	if (retval < 0)
 		goto error;
 #endif

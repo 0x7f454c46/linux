@@ -243,7 +243,8 @@ static const struct vm_special_mapping vvar_mapping = {
  * @image          - blob to map
  * @addr           - request a specific address (zero to map at free addr)
  */
-static int map_vdso(const struct vdso_image *image, unsigned long addr)
+static int map_vdso(const struct vdso_image *image, unsigned long addr,
+		    unsigned long *sysinfo_ehdr)
 {
 	struct mm_struct *mm = current->mm;
 	struct vm_area_struct *vma;
@@ -290,6 +291,7 @@ static int map_vdso(const struct vdso_image *image, unsigned long addr)
 	} else {
 		current->mm->context.vdso = (void __user *)text_start;
 		current->mm->context.vdso_image = image;
+		*sysinfo_ehdr = text_start;
 	}
 
 up_fail:
@@ -342,11 +344,12 @@ static unsigned long vdso_addr(unsigned long start, unsigned len)
 	return addr;
 }
 
-static int map_vdso_randomized(const struct vdso_image *image)
+static int map_vdso_randomized(const struct vdso_image *image,
+			       unsigned long *sysinfo_ehdr)
 {
 	unsigned long addr = vdso_addr(current->mm->start_stack, image->size-image->sym_vvar_start);
 
-	return map_vdso(image, addr);
+	return map_vdso(image, addr, sysinfo_ehdr);
 }
 #endif
 
@@ -354,6 +357,7 @@ int map_vdso_once(const struct vdso_image *image, unsigned long addr)
 {
 	struct mm_struct *mm = current->mm;
 	struct vm_area_struct *vma;
+	unsigned long unused;
 
 	mmap_write_lock(mm);
 	/*
@@ -372,19 +376,19 @@ int map_vdso_once(const struct vdso_image *image, unsigned long addr)
 	}
 	mmap_write_unlock(mm);
 
-	return map_vdso(image, addr);
+	return map_vdso(image, addr, &unused);
 }
 
 #if defined(CONFIG_X86_32) || defined(CONFIG_IA32_EMULATION)
-static int load_vdso_ia32(void)
+static int load_vdso_ia32(unsigned long *sysinfo_ehdr)
 {
 	if (vdso32_enabled != 1)  /* Other values all mean "disabled" */
 		return 0;
 
-	return map_vdso(&vdso_image_32, 0);
+	return map_vdso(&vdso_image_32, 0, sysinfo_ehdr);
 }
 #else
-static int load_vdso_ia32(void)
+static int load_vdso_ia32(unsigned long *sysinfo_ehdr)
 {
 	WARN_ON_ONCE(1);
 	return -ENODATA;
@@ -392,32 +396,32 @@ static int load_vdso_ia32(void)
 #endif
 
 #ifdef CONFIG_X86_64
-static int load_vdso_64(void)
+static int load_vdso_64(unsigned long *sysinfo_ehdr)
 {
 	if (!vdso64_enabled)
 		return 0;
 
 #ifdef CONFIG_X86_X32_ABI
 	if (in_x32_syscall())
-		return map_vdso_randomized(&vdso_image_x32);
+		return map_vdso_randomized(&vdso_image_x32, sysinfo_ehdr);
 #endif
 
-	return map_vdso_randomized(&vdso_image_64);
+	return map_vdso_randomized(&vdso_image_64, sysinfo_ehdr);
 }
 #else
-static int load_vdso_64(void)
+static int load_vdso_64(unsigned long *sysinfo_ehdr)
 {
 	WARN_ON_ONCE(1);
 	return -ENODATA;
 }
 #endif
 
-int arch_setup_additional_pages(struct linux_binprm *bprm, int uses_interp)
+int arch_setup_additional_pages(unsigned long *sysinfo_ehdr)
 {
 	if (in_ia32_syscall())
-		return load_vdso_ia32();
+		return load_vdso_ia32(sysinfo_ehdr);
 
-	return load_vdso_64();
+	return load_vdso_64(sysinfo_ehdr);
 }
 
 #ifdef CONFIG_X86_64

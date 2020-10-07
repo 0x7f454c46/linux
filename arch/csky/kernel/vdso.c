@@ -44,7 +44,7 @@ static int __init init_vdso(void)
 }
 subsys_initcall(init_vdso);
 
-int arch_setup_additional_pages(struct linux_binprm *bprm, int uses_interp)
+int arch_setup_additional_pages(unsigned long *sysinfo_ehdr)
 {
 	int ret;
 	unsigned long addr;
@@ -68,6 +68,7 @@ int arch_setup_additional_pages(struct linux_binprm *bprm, int uses_interp)
 		goto up_fail;
 
 	mm->context.vdso = (void *)addr;
+	*sysinfo_ehdr = addr;
 
 up_fail:
 	mmap_write_unlock(mm);

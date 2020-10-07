@@ -104,13 +104,20 @@ static inline int arch_elf_adjust_prot(int prot,
 }
 #endif
 
-struct linux_binprm;
 #ifdef CONFIG_ARCH_HAS_SETUP_ADDITIONAL_PAGES
-extern int arch_setup_additional_pages(struct linux_binprm *bprm,
-				       int uses_interp);
+/**
+ * arch_setup_additional_pages - Premap VMAs in a new-execed process
+ * @sysinfo_ehdr:	Returns vDSO position to be set in the initial
+ *			auxiliary vector (tag AT_SYSINFO_EHDR) by binfmt
+ *			loader. On failure isn't initialized.
+ *			As address == 0 is never used, it allows to check
+ *			if the tag should be set.
+ *
+ * Return: Zero if successful, or a negative error code on failure.
+ */
+extern int arch_setup_additional_pages(unsigned long *sysinfo_ehdr);
 #else
-static inline int arch_setup_additional_pages(struct linux_binprm *bprm,
-				       int uses_interp)
+static inline int arch_setup_additional_pages(unsigned long *sysinfo_ehdr)
 {
 	return 0;
 }

@@ -104,7 +104,7 @@ static int alloc_kuser_page(void)
 }
 arch_initcall(alloc_kuser_page);
 
-int arch_setup_additional_pages(struct linux_binprm *bprm, int uses_interp)
+int arch_setup_additional_pages(unsigned long *sysinfo_ehdr)
 {
 	struct mm_struct *mm = current->mm;
 	int ret;

@@ -56,11 +56,10 @@ static int __init vdso_init(void)
 }
 arch_initcall(vdso_init);
 
-int arch_setup_additional_pages(struct linux_binprm *bprm,
-	int uses_interp)
+int arch_setup_additional_pages(unsigned long *sysinfo_ehdr)
 {
 	struct mm_struct *mm = current->mm;
-	unsigned long vdso_base, vdso_len;
+	unsigned long vdso_base, vvar_base, vdso_len;
 	int ret;
 
 	vdso_len = (vdso_pages + 1) << PAGE_SHIFT;
@@ -89,12 +88,14 @@ int arch_setup_additional_pages(struct linux_binprm *bprm,
 		goto end;
 	}
 
-	vdso_base += (vdso_pages << PAGE_SHIFT);
-	ret = install_special_mapping(mm, vdso_base, PAGE_SIZE,
+	vvar_base = vdso_base + (vdso_pages << PAGE_SHIFT);
+	ret = install_special_mapping(mm, vvar_base, PAGE_SIZE,
 		(VM_READ | VM_MAYREAD), &vdso_pagelist[vdso_pages]);
 
 	if (unlikely(ret))
 		mm->context.vdso = NULL;
+	else
+		*sysinfo_ehdr = vdso_base;
 end:
 	mmap_write_unlock(mm);
 	return ret;

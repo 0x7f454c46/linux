@@ -833,6 +833,7 @@ static int load_elf_binary(struct linux_binprm *bprm)
 	unsigned long interp_load_addr = 0;
 	unsigned long start_code, end_code, start_data, end_data;
 	unsigned long reloc_func_desc __maybe_unused = 0;
+	unsigned long sysinfo_ehdr = 0;
 	int executable_stack = EXSTACK_DEFAULT;
 	struct elfhdr *elf_ex = (struct elfhdr *)bprm->buf;
 	struct elfhdr *interp_elf_ex = NULL;
@@ -1249,7 +1250,7 @@ out_free_interp:
 
 	set_binfmt(&elf_format);
 
-	retval = arch_setup_additional_pages(bprm, !!interpreter);
+	retval = arch_setup_additional_pages(&sysinfo_ehdr);
 	if (retval < 0)
 		goto out;
 

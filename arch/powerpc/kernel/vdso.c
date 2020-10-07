@@ -122,7 +122,7 @@ struct lib64_elfinfo
  * This is called from binfmt_elf, we create the special vma for the
  * vDSO and insert it into the mm struct tree
  */
-int arch_setup_additional_pages(struct linux_binprm *bprm, int uses_interp)
+int arch_setup_additional_pages(unsigned long *sysinfo_ehdr)
 {
 	struct mm_struct *mm = current->mm;
 	struct page **vdso_pagelist;
@@ -211,6 +211,7 @@ int arch_setup_additional_pages(struct linux_binprm *bprm, int uses_interp)
 	}
 
 	mmap_write_unlock(mm);
+	*sysinfo_ehdr = vdso_base;
 	return 0;
 
  fail_mmapsem:

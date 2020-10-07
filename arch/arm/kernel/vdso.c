@@ -233,7 +233,8 @@ static int install_vvar(struct mm_struct *mm, unsigned long addr)
 }
 
 /* assumes mmap_lock is write-locked */
-void arm_install_vdso(struct mm_struct *mm, unsigned long addr)
+void arm_install_vdso(struct mm_struct *mm, unsigned long addr,
+		      unsigned long *sysinfo_ehdr)
 {
 	struct vm_area_struct *vma;
 	unsigned long len;
@@ -254,7 +255,10 @@ void arm_install_vdso(struct mm_struct *mm, unsigned long addr)
 		VM_READ | VM_EXEC | VM_MAYREAD | VM_MAYWRITE | VM_MAYEXEC,
 		&vdso_text_mapping);
 
-	if (!IS_ERR(vma))
-		mm->context.vdso = addr;
+	if (IS_ERR(vma))
+		return;
+
+	mm->context.vdso = addr;
+	*sysinfo_ehdr = addr;
 }
 
