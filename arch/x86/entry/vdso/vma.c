@@ -376,48 +376,49 @@ int map_vdso_once(const struct vdso_image *image, unsigned long addr)
 }
 
 #if defined(CONFIG_X86_32) || defined(CONFIG_IA32_EMULATION)
-static int load_vdso32(void)
+static int load_vdso_ia32(void)
 {
 	if (vdso32_enabled != 1)  /* Other values all mean "disabled" */
 		return 0;
 
 	return map_vdso(&vdso_image_32, 0);
 }
+#else
+static int load_vdso_ia32(void)
+{
+	WARN_ON_ONCE(1);
+	return -ENODATA;
+}
 #endif
 
 #ifdef CONFIG_X86_64
-int arch_setup_additional_pages(struct linux_binprm *bprm, int uses_interp)
+static int load_vdso_64(void)
 {
 	if (!vdso64_enabled)
 		return 0;
 
+#ifdef CONFIG_X86_X32_ABI
+	if (in_x32_syscall())
+		return map_vdso_randomized(&vdso_image_x32);
+#endif
+
 	return map_vdso_randomized(&vdso_image_64);
 }
-
-#ifdef CONFIG_COMPAT
-int compat_arch_setup_additional_pages(struct linux_binprm *bprm,
-				       int uses_interp)
-{
-#ifdef CONFIG_X86_X32_ABI
-	if (in_x32_syscall()) {
-		if (!vdso64_enabled)
-			return 0;
-		return map_vdso_randomized(&vdso_image_x32);
-	}
-#endif
-#ifdef CONFIG_IA32_EMULATION
-	return load_vdso32();
 #else
-	return 0;
-#endif
+static int load_vdso_64(void)
+{
+	WARN_ON_ONCE(1);
+	return -ENODATA;
 }
 #endif
-#else
+
 int arch_setup_additional_pages(struct linux_binprm *bprm, int uses_interp)
 {
-	return load_vdso32();
+	if (in_ia32_syscall())
+		return load_vdso_ia32();
+
+	return load_vdso_64();
 }
-#endif
 
 #ifdef CONFIG_X86_64
 static __init int vdso_setup(char *s)
