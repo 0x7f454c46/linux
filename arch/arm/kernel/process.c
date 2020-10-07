@@ -389,7 +389,7 @@ static const struct vm_special_mapping sigpage_mapping = {
 	.mremap = sigpage_mremap,
 };
 
-int arch_setup_additional_pages(struct linux_binprm *bprm, int uses_interp)
+int arch_setup_additional_pages(unsigned long *sysinfo_ehdr)
 {
 	struct mm_struct *mm = current->mm;
 	struct vm_area_struct *vma;
@@ -430,7 +430,7 @@ int arch_setup_additional_pages(struct linux_binprm *bprm, int uses_interp)
 	 * to be fatal to the process, so no error check needed
 	 * here.
 	 */
-	arm_install_vdso(mm, addr + PAGE_SIZE);
+	arm_install_vdso(mm, addr + PAGE_SIZE, sysinfo_ehdr);
 
  up_fail:
 	mmap_write_unlock(mm);

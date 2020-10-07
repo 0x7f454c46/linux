@@ -346,8 +346,6 @@ static int __init init_vdso(void)
 }
 subsys_initcall(init_vdso);
 
-struct linux_binprm;
-
 /* Shuffle the vdso up a bit, randomly. */
 static unsigned long vdso_addr(unsigned long start, unsigned int len)
 {
@@ -359,7 +357,8 @@ static unsigned long vdso_addr(unsigned long start, unsigned int len)
 }
 
 static int map_vdso(const struct vdso_image *image,
-		struct vm_special_mapping *vdso_mapping)
+		    struct vm_special_mapping *vdso_mapping,
+		    unsigned long *sysinfo_ehdr)
 {
 	struct mm_struct *mm = current->mm;
 	struct vm_area_struct *vma;
@@ -421,12 +420,14 @@ static int map_vdso(const struct vdso_image *image,
 up_fail:
 	if (ret)
 		current->mm->context.vdso = NULL;
+	else
+		*sysinfo_ehdr = text_start;
 
 	mmap_write_unlock(mm);
 	return ret;
 }
 
-int arch_setup_additional_pages(struct linux_binprm *bprm, int uses_interp)
+int arch_setup_additional_pages(unsigned long *sysinfo_ehdr)
 {
 
 	if (!vdso_enabled)
@@ -434,11 +435,11 @@ int arch_setup_additional_pages(struct linux_binprm *bprm, int uses_interp)
 
 #if defined CONFIG_COMPAT
 	if (!(is_32bit_task()))
-		return map_vdso(&vdso_image_64_builtin, &vdso_mapping64);
+		return map_vdso(&vdso_image_64_builtin, &vdso_mapping64, sysinfo_ehdr);
 	else
-		return map_vdso(&vdso_image_32_builtin, &vdso_mapping32);
+		return map_vdso(&vdso_image_32_builtin, &vdso_mapping32, sysinfo_ehdr);
 #else
-	return map_vdso(&vdso_image_64_builtin, &vdso_mapping64);
+	return map_vdso(&vdso_image_64_builtin, &vdso_mapping64, sysinfo_ehdr);
 #endif
 
 }

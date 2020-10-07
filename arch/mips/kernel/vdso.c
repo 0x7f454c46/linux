@@ -86,7 +86,7 @@ static unsigned long vdso_base(void)
 	return base;
 }
 
-int arch_setup_additional_pages(struct linux_binprm *bprm, int uses_interp)
+int arch_setup_additional_pages(unsigned long *sysinfo_ehdr)
 {
 	struct mips_vdso_image *image = current->thread.abi->vdso;
 	struct mm_struct *mm = current->mm;
@@ -184,6 +184,7 @@ int arch_setup_additional_pages(struct linux_binprm *bprm, int uses_interp)
 	}
 
 	mm->context.vdso = (void *)vdso_addr;
+	*sysinfo_ehdr = vdso_addr;
 	ret = 0;
 
 out:
