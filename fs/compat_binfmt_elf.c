@@ -115,11 +115,6 @@
 #define START_THREAD		COMPAT_START_THREAD
 #endif
 
-#ifdef	compat_arch_setup_additional_pages
-#undef	arch_setup_additional_pages
-#define	arch_setup_additional_pages compat_arch_setup_additional_pages
-#endif
-
 #ifdef	compat_elf_read_implies_exec
 #undef	elf_read_implies_exec
 #define	elf_read_implies_exec compat_elf_read_implies_exec
