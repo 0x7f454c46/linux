@@ -237,11 +237,6 @@ do {									\
 #else
 #define COMPAT_ARCH_DLINFO
 #endif
-struct linux_binprm;
-extern int aarch32_setup_additional_pages(struct linux_binprm *bprm,
-					  int uses_interp);
-#define compat_arch_setup_additional_pages \
-					aarch32_setup_additional_pages
 
 #endif /* CONFIG_COMPAT */
 
