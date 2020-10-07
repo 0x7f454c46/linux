@@ -190,7 +190,7 @@ static vm_fault_t vvar_fault(const struct vm_special_mapping *sm,
  * This is called from binfmt_elf, we create the special vma for the
  * vDSO and insert it into the mm struct tree
  */
-static int __arch_setup_additional_pages(struct linux_binprm *bprm, int uses_interp)
+static int __arch_setup_additional_pages(unsigned long *sysinfo_ehdr)
 {
 	unsigned long vdso_size, vdso_base, mappings_size;
 	struct vm_special_mapping *vdso_spec;
@@ -248,15 +248,17 @@ static int __arch_setup_additional_pages(struct linux_binprm *bprm, int uses_int
 	vma = _install_special_mapping(mm, vdso_base + vvar_size, vdso_size,
 				       VM_READ | VM_EXEC | VM_MAYREAD |
 				       VM_MAYWRITE | VM_MAYEXEC, vdso_spec);
-	if (IS_ERR(vma))
+	if (IS_ERR(vma)) {
 		do_munmap(mm, vdso_base, vvar_size, NULL);
-	else
+	} else {
 		mm->context.vdso = (void __user *)vdso_base + vvar_size;
+		*sysinfo_ehdr = vdso_base + vvar_size;
+	}
 
 	return PTR_ERR_OR_ZERO(vma);
 }
 
-int arch_setup_additional_pages(struct linux_binprm *bprm, int uses_interp)
+int arch_setup_additional_pages(unsigned long *sysinfo_ehdr)
 {
 	struct mm_struct *mm = current->mm;
 	int rc;
@@ -266,7 +268,7 @@ int arch_setup_additional_pages(struct linux_binprm *bprm, int uses_interp)
 	if (mmap_write_lock_killable(mm))
 		return -EINTR;
 
-	rc = __arch_setup_additional_pages(bprm, uses_interp);
+	rc = __arch_setup_additional_pages(sysinfo_ehdr);
 	if (rc)
 		mm->context.vdso = NULL;
 

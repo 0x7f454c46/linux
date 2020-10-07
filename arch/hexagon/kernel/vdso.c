@@ -46,7 +46,7 @@ arch_initcall(vdso_init);
 /*
  * Called from binfmt_elf.  Create a VMA for the vDSO page.
  */
-int arch_setup_additional_pages(struct linux_binprm *bprm, int uses_interp)
+int arch_setup_additional_pages(unsigned long *sysinfo_ehdr)
 {
 	int ret;
 	unsigned long vdso_base;
@@ -74,6 +74,7 @@ int arch_setup_additional_pages(struct linux_binprm *bprm, int uses_interp)
 		goto up_fail;
 
 	mm->context.vdso = (void *)vdso_base;
+	*sysinfo_ehdr = vdso_base;
 
 up_fail:
 	mmap_write_unlock(mm);

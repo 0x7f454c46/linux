@@ -50,7 +50,7 @@ oom:
 }
 subsys_initcall(init_vdso);
 
-int arch_setup_additional_pages(struct linux_binprm *bprm, int uses_interp)
+int arch_setup_additional_pages(unsigned long *sysinfo_ehdr)
 {
 	int err;
 	struct mm_struct *mm = current->mm;

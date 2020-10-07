@@ -167,7 +167,7 @@ int vdso_getcpu_init(void)
 }
 early_initcall(vdso_getcpu_init); /* Must be called before SMP init */
 
-int arch_setup_additional_pages(struct linux_binprm *bprm, int uses_interp)
+int arch_setup_additional_pages(unsigned long *sysinfo_ehdr)
 {
 	unsigned long vdso_text_len, vdso_mapping_len;
 	unsigned long vvar_start, vdso_text_start;
@@ -204,6 +204,7 @@ int arch_setup_additional_pages(struct linux_binprm *bprm, int uses_interp)
 		rc = PTR_ERR(vma);
 	} else {
 		current->mm->context.vdso_base = vdso_text_start;
+		*sysinfo_ehdr = vdso_text_start;
 		rc = 0;
 	}
 out:

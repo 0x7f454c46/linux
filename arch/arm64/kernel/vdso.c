@@ -213,8 +213,7 @@ static vm_fault_t vvar_fault(const struct vm_special_mapping *sm,
 
 static int __setup_additional_pages(enum vdso_abi abi,
 				    struct mm_struct *mm,
-				    struct linux_binprm *bprm,
-				    int uses_interp)
+				    unsigned long *sysinfo_ehdr)
 {
 	unsigned long vdso_base, vdso_text_len, vdso_mapping_len;
 	unsigned long gp_flags = 0;
@@ -248,6 +247,8 @@ static int __setup_additional_pages(enum vdso_abi abi,
 		return PTR_ERR(ret);
 
 	mm->context.vdso = (void *)vdso_base;
+	*sysinfo_ehdr = vdso_base;
+
 	return 0;
 }
 
@@ -405,8 +406,7 @@ out:
 	return PTR_ERR_OR_ZERO(ret);
 }
 
-static int aarch32_setup_additional_pages(struct linux_binprm *bprm,
-					  int uses_interp)
+static int aarch32_setup_additional_pages(unsigned long *sysinfo_ehdr)
 {
 	struct mm_struct *mm = current->mm;
 	int ret;
@@ -416,8 +416,7 @@ static int aarch32_setup_additional_pages(struct linux_binprm *bprm,
 		return ret;
 
 	if (IS_ENABLED(CONFIG_COMPAT_VDSO)) {
-		ret = __setup_additional_pages(VDSO_ABI_AA32, mm, bprm,
-					       uses_interp);
+		ret = __setup_additional_pages(VDSO_ABI_AA32, mm, sysinfo_ehdr);
 		if (ret)
 			return ret;
 	}
@@ -451,7 +450,7 @@ static int __init vdso_init(void)
 }
 arch_initcall(vdso_init);
 
-int arch_setup_additional_pages(struct linux_binprm *bprm, int uses_interp)
+int arch_setup_additional_pages(unsigned long *sysinfo_ehdr)
 {
 	struct mm_struct *mm = current->mm;
 	int ret;
@@ -460,9 +459,9 @@ int arch_setup_additional_pages(struct linux_binprm *bprm, int uses_interp)
 		return -EINTR;
 
 	if (is_compat_task())
-		ret = aarch32_setup_additional_pages(bprm, uses_interp);
+		ret = aarch32_setup_additional_pages(sysinfo_ehdr);
 	else
-		ret = __setup_additional_pages(VDSO_ABI_AA64, mm, bprm, uses_interp);
+		ret = __setup_additional_pages(VDSO_ABI_AA64, mm, sysinfo_ehdr);
 
 	mmap_write_unlock(mm);
 
