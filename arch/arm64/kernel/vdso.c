@@ -401,29 +401,24 @@ out:
 	return PTR_ERR_OR_ZERO(ret);
 }
 
-int aarch32_setup_additional_pages(struct linux_binprm *bprm, int uses_interp)
+static int aarch32_setup_additional_pages(struct linux_binprm *bprm,
+					  int uses_interp)
 {
 	struct mm_struct *mm = current->mm;
 	int ret;
 
-	if (mmap_write_lock_killable(mm))
-		return -EINTR;
-
 	ret = aarch32_kuser_helpers_setup(mm);
 	if (ret)
-		goto out;
+		return ret;
 
 	if (IS_ENABLED(CONFIG_COMPAT_VDSO)) {
 		ret = __setup_additional_pages(VDSO_ABI_AA32, mm, bprm,
 					       uses_interp);
 		if (ret)
-			goto out;
+			return ret;
 	}
 
-	ret = aarch32_sigreturn_setup(mm);
-out:
-	mmap_write_unlock(mm);
-	return ret;
+	return aarch32_sigreturn_setup(mm);
 }
 #endif /* CONFIG_COMPAT */
 
@@ -460,7 +455,11 @@ int arch_setup_additional_pages(struct linux_binprm *bprm, int uses_interp)
 	if (mmap_write_lock_killable(mm))
 		return -EINTR;
 
-	ret = __setup_additional_pages(VDSO_ABI_AA64, mm, bprm, uses_interp);
+	if (is_compat_task())
+		ret = aarch32_setup_additional_pages(bprm, uses_interp);
+	else
+		ret = __setup_additional_pages(VDSO_ABI_AA64, mm, bprm, uses_interp);
+
 	mmap_write_unlock(mm);
 
 	return ret;
