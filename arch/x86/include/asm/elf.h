@@ -377,11 +377,6 @@ else									\
 	((unsigned long)current->mm->context.vdso +			\
 	 vdso_image_32.sym___kernel_vsyscall)
 
-struct linux_binprm;
-extern int compat_arch_setup_additional_pages(struct linux_binprm *bprm,
-					      int uses_interp);
-#define compat_arch_setup_additional_pages compat_arch_setup_additional_pages
-
 /* Do not change the values. See get_align_mask() */
 enum align_flags {
 	ALIGN_VA_32	= BIT(0),
