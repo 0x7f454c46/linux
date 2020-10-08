@@ -208,7 +208,7 @@ struct task_struct;
 #define GATE_EHDR	((const struct elfhdr *) GATE_ADDR)
 
 /* update AT_VECTOR_SIZE_ARCH if the number of NEW_AUX_ENT entries changes */
-#define ARCH_DLINFO								\
+#define ARCH_DLINFO(sysinfo_ehdr)						\
 do {										\
 	extern char __kernel_syscall_via_epc[];					\
 	NEW_AUX_ENT(AT_SYSINFO, (unsigned long) __kernel_syscall_via_epc);	\

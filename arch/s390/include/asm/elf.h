@@ -269,11 +269,10 @@ do {								\
 #define STACK_RND_MASK	MMAP_RND_MASK
 
 /* update AT_VECTOR_SIZE_ARCH if the number of NEW_AUX_ENT entries changes */
-#define ARCH_DLINFO							    \
+#define ARCH_DLINFO(sysinfo_ehdr)					    \
 do {									    \
 	if (vdso_enabled)						    \
-		NEW_AUX_ENT(AT_SYSINFO_EHDR,				    \
-			    (unsigned long)current->mm->context.vdso_base); \
+		NEW_AUX_ENT(AT_SYSINFO_EHDR, sysinfo_ehdr);		    \
 } while (0)
 
 #endif

@@ -63,7 +63,7 @@ static int elf_fdpic_map_file(struct elf_fdpic_params *, struct file *,
 
 static int create_elf_fdpic_tables(struct linux_binprm *, struct mm_struct *,
 				   struct elf_fdpic_params *,
-				   struct elf_fdpic_params *);
+				   struct elf_fdpic_params *, unsigned long);
 
 #ifndef CONFIG_MMU
 static int elf_fdpic_map_file_constdisp_on_uclinux(struct elf_fdpic_params *,
@@ -434,8 +434,8 @@ static int load_elf_fdpic_binary(struct linux_binprm *bprm)
 	current->mm->start_stack = current->mm->start_brk + stack_size;
 #endif
 
-	if (create_elf_fdpic_tables(bprm, current->mm,
-				    &exec_params, &interp_params) < 0)
+	if (create_elf_fdpic_tables(bprm, current->mm, &exec_params,
+				    &interp_params, sysinfo_ehdr) < 0)
 		goto error;
 
 	kdebug("- start_code  %lx", current->mm->start_code);
@@ -496,7 +496,8 @@ error:
 static int create_elf_fdpic_tables(struct linux_binprm *bprm,
 				   struct mm_struct *mm,
 				   struct elf_fdpic_params *exec_params,
-				   struct elf_fdpic_params *interp_params)
+				   struct elf_fdpic_params *interp_params,
+				   unsigned long sysinfo_ehdr)
 {
 	const struct cred *cred = current_cred();
 	unsigned long sp, csp, nitems;
@@ -664,7 +665,7 @@ static int create_elf_fdpic_tables(struct linux_binprm *bprm,
 	/* ARCH_DLINFO must come last so platform specific code can enforce
 	 * special alignment requirements on the AUXV if necessary (eg. PPC).
 	 */
-	ARCH_DLINFO;
+	ARCH_DLINFO(sysinfo_ehdr);
 #endif
 #undef NEW_AUX_ENT
 
