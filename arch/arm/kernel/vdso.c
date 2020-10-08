@@ -47,17 +47,8 @@ static const struct vm_special_mapping vdso_data_mapping = {
 	.pages = &vdso_data_page,
 };
 
-static int vdso_mremap(const struct vm_special_mapping *sm,
-		struct vm_area_struct *new_vma)
-{
-	current->mm->context.vdso = new_vma->vm_start;
-
-	return 0;
-}
-
 static struct vm_special_mapping vdso_text_mapping __ro_after_init = {
 	.name = "[vdso]",
-	.mremap = vdso_mremap,
 };
 
 struct elfinfo {
@@ -239,8 +230,6 @@ void arm_install_vdso(struct mm_struct *mm, unsigned long addr,
 	struct vm_area_struct *vma;
 	unsigned long len;
 
-	mm->context.vdso = 0;
-
 	if (vdso_text_pagelist == NULL)
 		return;
 
@@ -258,7 +247,6 @@ void arm_install_vdso(struct mm_struct *mm, unsigned long addr,
 	if (IS_ERR(vma))
 		return;
 
-	mm->context.vdso = addr;
 	*sysinfo_ehdr = addr;
 }
 
