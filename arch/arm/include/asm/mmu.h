@@ -12,9 +12,6 @@ typedef struct {
 #endif
 	unsigned int	vmalloc_seq;
 	unsigned long	sigpage;
-#ifdef CONFIG_VDSO
-	unsigned long	vdso;
-#endif
 #ifdef CONFIG_BINFMT_ELF_FDPIC
 	unsigned long	exec_fdpic_loadmap;
 	unsigned long	interp_fdpic_loadmap;
