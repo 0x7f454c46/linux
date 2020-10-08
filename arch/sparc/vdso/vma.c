@@ -414,7 +414,6 @@ static int map_vdso(const struct vdso_image *image,
 		ret = PTR_ERR(vma);
 		do_munmap(mm, text_start, image->size, NULL);
 	} else {
-		current->mm->context.vdso = (void __user *)text_start;
 		*sysinfo_ehdr = text_start;
 	}
 
