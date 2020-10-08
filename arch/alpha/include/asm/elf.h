@@ -155,7 +155,7 @@ extern int alpha_l2_cacheshape;
 extern int alpha_l3_cacheshape;
 
 /* update AT_VECTOR_SIZE_ARCH if the number of NEW_AUX_ENT entries changes */
-#define ARCH_DLINFO						\
+#define ARCH_DLINFO(sysinfo_ehdr)				\
   do {								\
     NEW_AUX_ENT(AT_L1I_CACHESHAPE, alpha_l1i_cacheshape);	\
     NEW_AUX_ENT(AT_L1D_CACHESHAPE, alpha_l1d_cacheshape);	\

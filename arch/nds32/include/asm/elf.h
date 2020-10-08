@@ -165,13 +165,12 @@ struct elf32_hdr;
 #define FPU_AUX_ENT	NEW_AUX_ENT(AT_IGNORE, 0)
 #endif
 
-#define ARCH_DLINFO						\
+#define ARCH_DLINFO(sysinfo_ehdr)				\
 do {								\
 	/* Optional FPU initialization */			\
 	FPU_AUX_ENT;						\
 								\
-	NEW_AUX_ENT(AT_SYSINFO_EHDR,				\
-		    (elf_addr_t)current->mm->context.vdso);	\
+	NEW_AUX_ENT(AT_SYSINFO_EHDR, sysinfo_ehdr);		\
 } while (0)
 
 #endif

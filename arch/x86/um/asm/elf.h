@@ -88,7 +88,7 @@ extern unsigned long __kernel_vsyscall;
 #define AT_SYSINFO		32
 #define AT_SYSINFO_EHDR		33
 
-#define ARCH_DLINFO						\
+#define ARCH_DLINFO(sysinfo_ehdr)				\
 do {								\
 	if ( vsyscall_ehdr ) {					\
 		NEW_AUX_ENT(AT_SYSINFO,	__kernel_vsyscall);	\
@@ -183,7 +183,7 @@ do {								\
 
 extern unsigned long um_vdso_addr;
 #define AT_SYSINFO_EHDR 33
-#define ARCH_DLINFO	NEW_AUX_ENT(AT_SYSINFO_EHDR, um_vdso_addr)
+#define ARCH_DLINFO(sysinfo_ehdr)	NEW_AUX_ENT(AT_SYSINFO_EHDR, um_vdso_addr)
 
 #endif
 

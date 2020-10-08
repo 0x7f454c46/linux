@@ -165,10 +165,9 @@ typedef struct user_fpsimd_state elf_fpregset_t;
 })
 
 /* update AT_VECTOR_SIZE_ARCH if the number of NEW_AUX_ENT entries changes */
-#define ARCH_DLINFO							\
+#define ARCH_DLINFO(sysinfo_ehdr)					\
 do {									\
-	NEW_AUX_ENT(AT_SYSINFO_EHDR,					\
-		    (elf_addr_t)current->mm->context.vdso);		\
+	NEW_AUX_ENT(AT_SYSINFO_EHDR, sysinfo_ehdr);			\
 									\
 	/*								\
 	 * Should always be nonzero unless there's a kernel bug.	\
@@ -223,19 +222,12 @@ typedef compat_elf_greg_t		compat_elf_gregset_t[COMPAT_ELF_NGREG];
 	set_thread_flag(TIF_32BIT);					\
  })
 #ifdef CONFIG_COMPAT_VDSO
-#define COMPAT_ARCH_DLINFO						\
+#define COMPAT_ARCH_DLINFO(sysinfo_ehdr)				\
 do {									\
-	/*								\
-	 * Note that we use Elf64_Off instead of elf_addr_t because	\
-	 * elf_addr_t in compat is defined as Elf32_Addr and casting	\
-	 * current->mm->context.vdso to it triggers a cast warning of	\
-	 * cast from pointer to integer of different size.		\
-	 */								\
-	NEW_AUX_ENT(AT_SYSINFO_EHDR,					\
-			(Elf64_Off)current->mm->context.vdso);		\
+	NEW_AUX_ENT(AT_SYSINFO_EHDR, sysinfo_ehdr);			\
 } while (0)
 #else
-#define COMPAT_ARCH_DLINFO
+#define COMPAT_ARCH_DLINFO(sysinfo_ehdr)
 #endif
 
 #endif /* CONFIG_COMPAT */
