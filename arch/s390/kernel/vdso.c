@@ -143,13 +143,6 @@ static vm_fault_t vvar_fault(const struct vm_special_mapping *sm,
 	return vmf_insert_pfn(vma, vmf->address, pfn);
 }
 
-static int vdso_mremap(const struct vm_special_mapping *sm,
-		       struct vm_area_struct *vma)
-{
-	current->mm->context.vdso_base = vma->vm_start;
-	return 0;
-}
-
 static struct vm_special_mapping vvar_mapping = {
 	.name = "[vvar]",
 	.fault = vvar_fault,
@@ -157,7 +150,6 @@ static struct vm_special_mapping vvar_mapping = {
 
 static struct vm_special_mapping vdso_mapping = {
 	.name = "[vdso]",
-	.mremap = vdso_mremap,
 };
 
 int vdso_getcpu_init(void)
@@ -203,7 +195,6 @@ int arch_setup_additional_pages(unsigned long *sysinfo_ehdr)
 		do_munmap(mm, vvar_start, PAGE_SIZE, NULL);
 		rc = PTR_ERR(vma);
 	} else {
-		current->mm->context.vdso_base = vdso_text_start;
 		*sysinfo_ehdr = vdso_text_start;
 		rc = 0;
 	}
