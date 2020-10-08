@@ -170,13 +170,13 @@ extern void __kernel_vsyscall;
 #define VDSO_BASE		((unsigned long)current->mm->context.vdso)
 #define VDSO_SYM(x)		(VDSO_BASE + (unsigned long)(x))
 
-#define VSYSCALL_AUX_ENT					\
+#define VSYSCALL_AUX_ENT(sysinfo_ehdr)				\
 	if (vdso_enabled)					\
-		NEW_AUX_ENT(AT_SYSINFO_EHDR, VDSO_BASE);	\
+		NEW_AUX_ENT(AT_SYSINFO_EHDR, sysinfo_ehdr);	\
 	else							\
 		NEW_AUX_ENT(AT_IGNORE, 0)
 #else
-#define VSYSCALL_AUX_ENT	NEW_AUX_ENT(AT_IGNORE, 0)
+#define VSYSCALL_AUX_ENT(sysinfo_ehdr)	NEW_AUX_ENT(AT_IGNORE, 0)
 #endif /* CONFIG_VSYSCALL */
 
 #ifdef CONFIG_SH_FPU
@@ -188,13 +188,13 @@ extern void __kernel_vsyscall;
 extern int l1i_cache_shape, l1d_cache_shape, l2_cache_shape;
 
 /* update AT_VECTOR_SIZE_ARCH if the number of NEW_AUX_ENT entries changes */
-#define ARCH_DLINFO						\
+#define ARCH_DLINFO(sysinfo_ehdr)				\
 do {								\
 	/* Optional FPU initialization */			\
 	FPU_AUX_ENT;						\
 								\
 	/* Optional vsyscall entry */				\
-	VSYSCALL_AUX_ENT;					\
+	VSYSCALL_AUX_ENT(sysinfo_ehdr);				\
 								\
 	/* Cache desc */					\
 	NEW_AUX_ENT(AT_L1I_CACHESHAPE, l1i_cache_shape);	\

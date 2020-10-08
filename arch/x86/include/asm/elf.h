@@ -306,11 +306,14 @@ extern u32 elf_hwcap2;
 
 struct task_struct;
 
-#define	ARCH_DLINFO_IA32						\
+#define VDSO_ENTRY(sysinfo_ehdr)					\
+	(sysinfo_ehdr + vdso_image_32.sym___kernel_vsyscall)
+
+#define	ARCH_DLINFO_IA32(sysinfo_ehdr)					\
 do {									\
-	if (VDSO_CURRENT_BASE) {					\
-		NEW_AUX_ENT(AT_SYSINFO,	VDSO_ENTRY);			\
-		NEW_AUX_ENT(AT_SYSINFO_EHDR, VDSO_CURRENT_BASE);	\
+	if (sysinfo_ehdr) {						\
+		NEW_AUX_ENT(AT_SYSINFO,	VDSO_ENTRY(sysinfo_ehdr));	\
+		NEW_AUX_ENT(AT_SYSINFO_EHDR, sysinfo_ehdr);		\
 	}								\
 } while (0)
 
@@ -344,38 +347,30 @@ extern bool mmap_address_hint_valid(unsigned long addr, unsigned long len);
 #define __STACK_RND_MASK(is32bit) ((is32bit) ? 0x7ff : 0x3fffff)
 #define STACK_RND_MASK __STACK_RND_MASK(mmap_is_ia32())
 
-#define ARCH_DLINFO							\
+#define ARCH_DLINFO(sysinfo_ehdr)					\
 do {									\
 	if (vdso64_enabled)						\
-		NEW_AUX_ENT(AT_SYSINFO_EHDR,				\
-			    (unsigned long __force)current->mm->context.vdso); \
+		NEW_AUX_ENT(AT_SYSINFO_EHDR, sysinfo_ehdr);		\
 } while (0)
 
 /* As a historical oddity, the x32 and x86_64 vDSOs are controlled together. */
-#define ARCH_DLINFO_X32							\
+#define ARCH_DLINFO_X32(sysinfo_ehdr)					\
 do {									\
 	if (vdso64_enabled)						\
-		NEW_AUX_ENT(AT_SYSINFO_EHDR,				\
-			    (unsigned long __force)current->mm->context.vdso); \
+		NEW_AUX_ENT(AT_SYSINFO_EHDR, sysinfo_ehdr);		\
 } while (0)
 
 #define AT_SYSINFO		32
 
-#define COMPAT_ARCH_DLINFO						\
+#define COMPAT_ARCH_DLINFO(sysinfo_ehdr)				\
 if (exec->e_machine == EM_X86_64)					\
-	ARCH_DLINFO_X32;						\
+	ARCH_DLINFO_X32(sysinfo_ehdr);					\
 else									\
-	ARCH_DLINFO_IA32
+	ARCH_DLINFO_IA32(sysinfo_ehdr)
 
 #define COMPAT_ELF_ET_DYN_BASE	(TASK_UNMAPPED_BASE + 0x1000000)
 
 #endif /* !CONFIG_X86_32 */
-
-#define VDSO_CURRENT_BASE	((unsigned long)current->mm->context.vdso)
-
-#define VDSO_ENTRY							\
-	((unsigned long)current->mm->context.vdso +			\
-	 vdso_image_32.sym___kernel_vsyscall)
 
 /* Do not change the values. See get_align_mask() */
 enum align_flags {

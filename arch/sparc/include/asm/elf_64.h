@@ -213,12 +213,11 @@ do {	if ((ex).e_ident[EI_CLASS] == ELFCLASS32)	\
 
 extern unsigned int vdso_enabled;
 
-#define	ARCH_DLINFO							\
+#define	ARCH_DLINFO(sysinfo_ehdr)					\
 do {									\
 	extern struct adi_config adi_state;				\
 	if (vdso_enabled)						\
-		NEW_AUX_ENT(AT_SYSINFO_EHDR,				\
-			    (unsigned long)current->mm->context.vdso);	\
+		NEW_AUX_ENT(AT_SYSINFO_EHDR, sysinfo_ehdr);		\
 	NEW_AUX_ENT(AT_ADI_BLKSZ, adi_state.caps.blksz);		\
 	NEW_AUX_ENT(AT_ADI_NBITS, adi_state.caps.nbits);		\
 	NEW_AUX_ENT(AT_ADI_UEONADI, adi_state.caps.ue_on_adi);		\
