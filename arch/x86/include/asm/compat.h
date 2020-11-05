@@ -197,6 +197,12 @@ static inline bool in_x32_syscall(void)
 	return false;
 }
 
+/*
+ * Valid all time on the context of process that performs a syscall.
+ * Just born process has __X32_SYSCALL_BIT or TS_COMPAT set very
+ * early in load_binary() on setting personality and flags.
+ * See also set_personality_ia32().
+ */
 static inline bool in_32bit_syscall(void)
 {
 	return in_ia32_syscall() || in_x32_syscall();
