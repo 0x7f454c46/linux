@@ -999,8 +999,12 @@ out_free_interp:
 	if (retval)
 		goto out_free_dentry;
 
-	/* Do this immediately, since STACK_TOP as used in setup_arg_pages
-	   may depend on the personality.  */
+	/*
+	 * Do this immediately, since STACK_TOP as used in setup_arg_pages
+	 * may depend on the personality. At this moment we start
+	 * pretending that we are in a context of compat syscall for
+	 * compatible applications on x86, in_compat_syscall() starts working.
+	 */
 	SET_PERSONALITY2(*elf_ex, &arch_state);
 	if (elf_read_implies_exec(*elf_ex, executable_stack))
 		current->personality |= READ_IMPLIES_EXEC;
@@ -1246,7 +1250,7 @@ out_free_interp:
 	set_binfmt(&elf_format);
 
 #ifdef ARCH_HAS_SETUP_ADDITIONAL_PAGES
-	retval = ARCH_SETUP_ADDITIONAL_PAGES(bprm, elf_ex, !!interpreter);
+	retval = arch_setup_additional_pages(bprm, !!interpreter);
 	if (retval < 0)
 		goto out;
 #endif /* ARCH_HAS_SETUP_ADDITIONAL_PAGES */
