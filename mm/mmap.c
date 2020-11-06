@@ -3409,11 +3409,25 @@ void vm_stat_account(struct mm_struct *mm, vm_flags_t flags, long npages)
 
 static vm_fault_t special_mapping_fault(struct vm_fault *vmf);
 
+static void update_vdso_base(struct vm_area_struct *old_vma,
+				unsigned long new_addr)
+{
+#ifdef CONFIG_ARCH_HAS_VDSO_BASE
+	struct mm_struct *mm = old_vma->vm_mm;
+
+	if (WARN_ON_ONCE(!mm))
+		return;
+	if (old_vma->vm_start == (unsigned long)mm->vdso_base)
+		mm->vdso_base = (void __user *)new_addr;
+#endif
+}
+
 /*
  * Having a close hook prevents vma merging regardless of flags.
  */
 static void special_mapping_close(struct vm_area_struct *vma)
 {
+	update_vdso_base(vma, UNMAPPED_VDSO_BASE);
 }
 
 static const char *special_mapping_name(struct vm_area_struct *vma)
@@ -3421,7 +3435,8 @@ static const char *special_mapping_name(struct vm_area_struct *vma)
 	return ((struct vm_special_mapping *)vma->vm_private_data)->name;
 }
 
-static int special_mapping_mremap(struct vm_area_struct *new_vma,
+static int special_mapping_mremap(struct vm_area_struct *old_vma,
+				  struct vm_area_struct *new_vma,
 				  unsigned long flags)
 {
 	struct vm_special_mapping *sm = new_vma->vm_private_data;
@@ -3434,6 +3449,8 @@ static int special_mapping_mremap(struct vm_area_struct *new_vma,
 
 	if (sm->mremap)
 		sm->mremap(sm, new_vma);
+
+	update_vdso_base(old_vma, new_vma->vm_start);
 
 	return 0;
 }

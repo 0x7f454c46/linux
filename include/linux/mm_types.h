@@ -496,6 +496,16 @@ struct mm_struct {
 
 		/* Architecture-specific MM context */
 		mm_context_t context;
+#ifdef CONFIG_ARCH_HAS_VDSO_BASE
+		/*
+		 * Address of special mapping VMA to land after processing
+		 * a signal. Reads are unprotected: if a thread unmaps or
+		 * mremaps the mapping while another thread is processing
+		 * a signal, it can segfault while landing.
+		 */
+		void __user *vdso_base;
+#endif
+#define UNMAPPED_VDSO_BASE TASK_SIZE_MAX
 
 		unsigned long flags; /* Must use atomic bitops to access */
 
