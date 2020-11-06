@@ -3433,7 +3433,7 @@ static int special_mapping_mremap(struct vm_area_struct *new_vma,
 		return -EFAULT;
 
 	if (sm->mremap)
-		return sm->mremap(sm, new_vma);
+		sm->mremap(sm, new_vma);
 
 	return 0;
 }
