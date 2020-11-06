@@ -1082,6 +1082,7 @@ struct mm_struct *mm_alloc(void)
 		return NULL;
 
 	memset(mm, 0, sizeof(*mm));
+	init_vdso_base(mm);
 	return mm_init(mm, current, current_user_ns());
 }
 

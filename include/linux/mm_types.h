@@ -497,6 +497,16 @@ struct mm_struct {
 
 		/* Architecture-specific MM context */
 		mm_context_t context;
+#ifdef CONFIG_ARCH_HAS_VDSO_BASE
+		/*
+		 * Address of special mapping VMA to land after processing
+		 * a signal. Reads are unprotected: if a thread unmaps or
+		 * mremaps the mapping while another thread is processing
+		 * a signal, it can segfault while landing.
+		 */
+		void __user *vdso_base;
+#endif
+#define UNMAPPED_VDSO_BASE TASK_SIZE_MAX
 
 		unsigned long flags; /* Must use atomic bitops to access */
 
@@ -596,6 +606,13 @@ extern void tlb_finish_mmu(struct mmu_gather *tlb);
 static inline void init_tlb_flush_pending(struct mm_struct *mm)
 {
 	atomic_set(&mm->tlb_flush_pending, 0);
+}
+
+static inline void init_vdso_base(struct mm_struct *mm)
+{
+#ifdef CONFIG_ARCH_HAS_VDSO_BASE
+	mm->vdso_base = (void __user *)UNMAPPED_VDSO_BASE;
+#endif
 }
 
 static inline void inc_tlb_flush_pending(struct mm_struct *mm)
