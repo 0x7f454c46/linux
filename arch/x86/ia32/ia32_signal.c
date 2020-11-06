@@ -270,8 +270,8 @@ int ia32_setup_frame(int sig, struct ksignal *ksig,
 	unsafe_put_user(set->sig[1], &frame->extramask[0], Efault);
 	unsafe_put_user(ptr_to_compat(restorer), &frame->pretcode, Efault);
 	/*
-	 * These are actually not used anymore, but left because some
-	 * gdb versions depend on them as a marker.
+	 * This is popl %eax ; movl $__NR_sigreturn, %eax ; int $0x80
+	 * gdb uses it as a signature to notice signal handler stack frames.
 	 */
 	unsafe_put_user(*((u64 *)&code), (u64 __user *)frame->retcode, Efault);
 	user_access_end();
@@ -336,14 +336,16 @@ int ia32_setup_rt_frame(int sig, struct ksignal *ksig,
 
 	if (ksig->ka.sa.sa_flags & SA_RESTORER)
 		restorer = ksig->ka.sa.sa_restorer;
-	else
+	else if (current->mm->context.vdso)
 		restorer = current->mm->context.vdso +
 			vdso_image_32.sym___kernel_rt_sigreturn;
+	else
+		restorer = &frame->retcode;
 	unsafe_put_user(ptr_to_compat(restorer), &frame->pretcode, Efault);
 
 	/*
-	 * Not actually used anymore, but left because some gdb
-	 * versions need it.
+	 * This is popl %eax ; movl $__NR_sigreturn, %eax ; int $0x80
+	 * gdb uses it as a signature to notice signal handler stack frames.
 	 */
 	unsafe_put_user(*((u64 *)&code), (u64 __user *)frame->retcode, Efault);
 	unsafe_put_sigcontext32(&frame->uc.uc_mcontext, fp, regs, set, Efault);
