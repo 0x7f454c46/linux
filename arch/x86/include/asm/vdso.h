@@ -45,6 +45,10 @@ extern const struct vdso_image vdso_image_x32;
 extern const struct vdso_image vdso_image_32;
 #endif
 
+#define current_has_vdso(image)						\
+	(current->mm->context.vdso != 0 &&				\
+	current->mm->context.vdso_image == image)
+
 extern void __init init_vdso_image(const struct vdso_image *image);
 
 extern int map_vdso_once(const struct vdso_image *image, unsigned long addr);
