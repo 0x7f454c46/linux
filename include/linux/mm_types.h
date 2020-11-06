@@ -770,8 +770,8 @@ struct vm_special_mapping {
 				struct vm_area_struct *vma,
 				struct vm_fault *vmf);
 
-	int (*mremap)(const struct vm_special_mapping *sm,
-		     struct vm_area_struct *new_vma);
+	void (*mremap)(const struct vm_special_mapping *sm,
+		       struct vm_area_struct *new_vma);
 };
 
 enum tlb_flush_reason {

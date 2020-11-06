@@ -86,15 +86,13 @@ static void vdso_fix_landing(const struct vdso_image *image,
 #endif
 }
 
-static int vdso_mremap(const struct vm_special_mapping *sm,
+static void vdso_mremap(const struct vm_special_mapping *sm,
 		struct vm_area_struct *new_vma)
 {
 	const struct vdso_image *image = current->mm->context.vdso_image;
 
 	vdso_fix_landing(image, new_vma);
 	current->mm->context.vdso = (void __user *)new_vma->vm_start;
-
-	return 0;
 }
 
 #ifdef CONFIG_TIME_NS
