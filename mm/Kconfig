@@ -883,4 +883,7 @@ config ARCH_HAS_HUGEPD
 config MAPPING_DIRTY_HELPERS
         bool
 
+config ARCH_HAS_USER_LANDING
+	bool
+
 endmenu

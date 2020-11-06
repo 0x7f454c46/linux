@@ -488,6 +488,16 @@ struct mm_struct {
 
 		/* Architecture-specific MM context */
 		mm_context_t context;
+#ifdef CONFIG_ARCH_HAS_USER_LANDING
+		/*
+		 * Address of special mapping VMA to land after processing
+		 * a signal. Reads are unprotected: if a thread unmaps or
+		 * mremaps the mapping while another thread is processing
+		 * a signal, it can segfault while landing.
+		 */
+		void __user *user_landing;
+#endif
+#define UNMAPPED_USER_LANDING TASK_SIZE_MAX
 
 		unsigned long flags; /* Must use atomic bitops to access */
 
