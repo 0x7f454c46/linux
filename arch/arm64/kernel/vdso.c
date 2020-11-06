@@ -78,12 +78,10 @@ static union {
 } vdso_data_store __page_aligned_data;
 struct vdso_data *vdso_data = vdso_data_store.data;
 
-static int vdso_mremap(const struct vm_special_mapping *sm,
+static void vdso_mremap(const struct vm_special_mapping *sm,
 		struct vm_area_struct *new_vma)
 {
 	current->mm->context.vdso = (void *)new_vma->vm_start;
-
-	return 0;
 }
 
 static int __vdso_init(enum vdso_abi abi)
