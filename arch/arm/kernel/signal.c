@@ -451,13 +451,17 @@ rc_finish:
 #ifdef CONFIG_MMU
 		if (cpsr & MODE32_BIT) {
 			struct mm_struct *mm = current->mm;
+			unsigned long land = (unsigned long)mm->vdso_base;
+
+			if (land == UNMAPPED_VDSO_BASE)
+				return 1;
 
 			/*
 			 * 32-bit code can use the signal return page
 			 * except when the MPU has protected the vectors
 			 * page from PL0
 			 */
-			retcode = mm->context.sigpage + signal_return_offset +
+			retcode = land + signal_return_offset +
 				  (idx << 2) + thumb;
 		} else
 #endif

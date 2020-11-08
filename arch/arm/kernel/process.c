@@ -376,16 +376,9 @@ static unsigned long sigpage_addr(const struct mm_struct *mm,
 static struct page *signal_page;
 extern struct page *get_signal_page(void);
 
-static void sigpage_mremap(const struct vm_special_mapping *sm,
-		struct vm_area_struct *new_vma)
-{
-	current->mm->context.sigpage = new_vma->vm_start;
-}
-
 static const struct vm_special_mapping sigpage_mapping = {
 	.name = "[sigpage]",
 	.pages = &signal_page,
-	.mremap = sigpage_mremap,
 };
 
 int arch_setup_additional_pages(unsigned long *sysinfo_ehdr)
@@ -423,7 +416,7 @@ int arch_setup_additional_pages(unsigned long *sysinfo_ehdr)
 		goto up_fail;
 	}
 
-	mm->context.sigpage = addr;
+	mm->vdso_base = (void __user *)addr;
 
 	/* Unlike the sigpage, failure to install the vdso is unlikely
 	 * to be fatal to the process, so no error check needed
