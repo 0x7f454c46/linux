@@ -77,7 +77,7 @@ static void vdso_fix_landing(const struct vdso_image *image,
 		struct pt_regs *regs = current_pt_regs();
 		unsigned long vdso_land = image->sym_int80_landing_pad;
 		unsigned long old_land_addr = vdso_land +
-			(unsigned long)current->mm->context.vdso;
+			(unsigned long)current->mm->vdso_base;
 
 		/* Fixing userspace landing - look at do_fast_syscall_32 */
 		if (regs->ip == old_land_addr)
@@ -92,7 +92,6 @@ static void vdso_mremap(const struct vm_special_mapping *sm,
 	const struct vdso_image *image = current->mm->context.vdso_image;
 
 	vdso_fix_landing(image, new_vma);
-	current->mm->context.vdso = (void __user *)new_vma->vm_start;
 }
 
 #ifdef CONFIG_TIME_NS
@@ -287,7 +286,7 @@ static int map_vdso(const struct vdso_image *image, unsigned long addr,
 		ret = PTR_ERR(vma);
 		do_munmap(mm, text_start, image->size, NULL);
 	} else {
-		current->mm->context.vdso = (void __user *)text_start;
+		current->mm->vdso_base = (void __user *)text_start;
 		current->mm->context.vdso_image = image;
 		*sysinfo_ehdr = text_start;
 	}
@@ -362,8 +361,8 @@ int map_vdso_once(const struct vdso_image *image, unsigned long addr)
 	 * Check if we have already mapped vdso blob - fail to prevent
 	 * abusing from userspace install_special_mapping, which may
 	 * not do accounting and rlimit right.
-	 * We could search vma near context.vdso, but it's a slowpath,
-	 * so let's explicitly check all VMAs to be completely sure.
+	 * It's a slowpath, let's explicitly check all VMAs to be
+	 * completely sure.
 	 */
 	for (vma = mm->mmap; vma; vma = vma->vm_next) {
 		if (vma_is_special_mapping(vma, &vdso_mapping) ||
@@ -415,9 +414,9 @@ bool arch_syscall_is_vdso_sigreturn(struct pt_regs *regs)
 {
 #if defined(CONFIG_X86_32) || defined(CONFIG_IA32_EMULATION)
 	const struct vdso_image *image = current->mm->context.vdso_image;
-	unsigned long vdso = (unsigned long) current->mm->context.vdso;
+	unsigned long vdso = (unsigned long) current->mm->vdso_base;
 
-	if (in_ia32_syscall() && image == &vdso_image_32) {
+	if (in_ia32_syscall() && current_has_vdso(&vdso_image_32)) {
 		if (regs->ip == vdso + image->sym_vdso32_sigreturn_landing_pad ||
 		    regs->ip == vdso + image->sym_vdso32_rt_sigreturn_landing_pad)
 			return true;

@@ -46,7 +46,7 @@ extern const struct vdso_image vdso_image_32;
 #endif
 
 #define current_has_vdso(image)						\
-	(current->mm->context.vdso != 0 &&				\
+	(current->mm->vdso_base != (void __user *)UNMAPPED_VDSO_BASE &&	\
 	current->mm->context.vdso_image == image)
 
 extern void __init init_vdso_image(const struct vdso_image *image);
