@@ -394,7 +394,7 @@ static int aarch32_sigreturn_setup(struct mm_struct *mm)
 	if (IS_ERR(ret))
 		goto out;
 
-	mm->context.sigpage = (void *)addr;
+	mm->vdso_base = (void __user *)addr;
 
 out:
 	return PTR_ERR_OR_ZERO(ret);
