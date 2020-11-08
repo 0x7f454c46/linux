@@ -78,12 +78,6 @@ static union {
 } vdso_data_store __page_aligned_data;
 struct vdso_data *vdso_data = vdso_data_store.data;
 
-static void vdso_mremap(const struct vm_special_mapping *sm,
-		struct vm_area_struct *new_vma)
-{
-	current->mm->context.vdso = (void *)new_vma->vm_start;
-}
-
 static int __vdso_init(enum vdso_abi abi)
 {
 	int i;
@@ -239,7 +233,6 @@ static int __setup_additional_pages(enum vdso_abi abi,
 		gp_flags = VM_ARM64_BTI;
 
 	vdso_base += VVAR_NR_PAGES * PAGE_SIZE;
-	mm->context.vdso = (void *)vdso_base;
 	ret = _install_special_mapping(mm, vdso_base, vdso_text_len,
 				       VM_READ|VM_EXEC|gp_flags|
 				       VM_MAYREAD|VM_MAYWRITE|VM_MAYEXEC,
@@ -247,12 +240,17 @@ static int __setup_additional_pages(enum vdso_abi abi,
 	if (IS_ERR(ret))
 		goto up_fail;
 
+	/*
+	 * 32-bit ABI is to land on sigpage (see aarch32_sigreturn_setup()),
+	 * 64-bit on vDSO.
+	 */
+	if (abi == VDSO_ABI_AA64)
+		mm->vdso_base = (void __user *)vdso_base;
 	*sysinfo_ehdr = vdso_base;
 
 	return 0;
 
 up_fail:
-	mm->context.vdso = NULL;
 	return PTR_ERR(ret);
 }
 
@@ -285,7 +283,6 @@ static struct vm_special_mapping aarch32_vdso_maps[] = {
 	},
 	[AA32_MAP_VDSO] = {
 		.name = "[vdso]",
-		.mremap = vdso_mremap,
 	},
 };
 
@@ -431,7 +428,6 @@ static struct vm_special_mapping aarch64_vdso_maps[] __ro_after_init = {
 	},
 	[AA64_MAP_VDSO] = {
 		.name	= "[vdso]",
-		.mremap = vdso_mremap,
 	},
 };
 
