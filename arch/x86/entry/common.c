@@ -151,8 +151,9 @@ __visible noinstr long do_fast_syscall_32(struct pt_regs *regs)
 	 * Called using the internal vDSO SYSENTER/SYSCALL32 calling
 	 * convention.  Adjust regs so it looks like we entered using int80.
 	 */
-	landing_pad = (unsigned long)current->mm->context.vdso +
+	landing_pad = (unsigned long)current->mm->user_landing +
 					vdso_image_32.sym_int80_landing_pad;
+
 
 	/*
 	 * SYSENTER loses EIP, and even SYSCALL32 needs us to skip forward
