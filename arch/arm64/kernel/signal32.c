@@ -315,7 +315,7 @@ static void __user *compat_get_sigframe(struct ksignal *ksig,
 	return frame;
 }
 
-static void compat_setup_return(struct pt_regs *regs, struct k_sigaction *ka,
+static int compat_setup_return(struct pt_regs *regs, struct k_sigaction *ka,
 				compat_ulong_t __user *rc, void __user *frame,
 				int usig)
 {
@@ -342,13 +342,16 @@ static void compat_setup_return(struct pt_regs *regs, struct k_sigaction *ka,
 		retcode = ptr_to_compat(ka->sa.sa_restorer);
 	} else {
 		/* Set up sigreturn pointer */
+		unsigned long land = (unsigned long)current->mm->vdso_base;
 		unsigned int idx = thumb << 1;
 
 		if (ka->sa.sa_flags & SA_SIGINFO)
 			idx += 3;
 
-		retcode = (unsigned long)current->mm->context.sigpage +
-			  (idx << 2) + thumb;
+		if (land == UNMAPPED_VDSO_BASE)
+			return 1;
+
+		retcode = land + (idx << 2) + thumb;
 	}
 
 	regs->regs[0]	= usig;
@@ -356,6 +359,8 @@ static void compat_setup_return(struct pt_regs *regs, struct k_sigaction *ka,
 	regs->compat_lr	= retcode;
 	regs->pc	= handler;
 	regs->pstate	= spsr;
+
+	return 0;
 }
 
 static int compat_setup_sigframe(struct compat_sigframe __user *sf,
@@ -425,7 +430,8 @@ int compat_setup_rt_frame(int usig, struct ksignal *ksig,
 	err |= compat_setup_sigframe(&frame->sig, regs, set);
 
 	if (err == 0) {
-		compat_setup_return(regs, &ksig->ka, frame->sig.retcode, frame, usig);
+		err = compat_setup_return(regs, &ksig->ka,
+					  frame->sig.retcode, frame, usig);
 		regs->regs[1] = (compat_ulong_t)(unsigned long)&frame->info;
 		regs->regs[2] = (compat_ulong_t)(unsigned long)&frame->sig.uc;
 	}
@@ -448,7 +454,8 @@ int compat_setup_frame(int usig, struct ksignal *ksig, sigset_t *set,
 
 	err |= compat_setup_sigframe(frame, regs, set);
 	if (err == 0)
-		compat_setup_return(regs, &ksig->ka, frame->retcode, frame, usig);
+		err = compat_setup_return(regs, &ksig->ka,
+					  frame->retcode, frame, usig);
 
 	return err;
 }
