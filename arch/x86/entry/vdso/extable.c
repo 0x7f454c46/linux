@@ -25,10 +25,10 @@ bool fixup_vdso_exception(struct pt_regs *regs, int trapnr,
 	if (trapnr == X86_TRAP_DB || trapnr == X86_TRAP_BP)
 		return false;
 
-	if (!current->mm->context.vdso)
+	if (current->mm->vdso_base == (void *)UNMAPPED_VDSO_BASE)
 		return false;
 
-	base =  (unsigned long)current->mm->context.vdso + image->extable_base;
+	base = (unsigned long)current->mm->vdso_base + image->extable_base;
 	nr_entries = image->extable_len / (sizeof(*extable));
 	extable = image->extable;
 
