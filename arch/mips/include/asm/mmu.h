@@ -12,8 +12,6 @@ typedef struct {
 		atomic64_t mmid;
 	};
 
-	void *vdso;
-
 	/* lock to be held whilst modifying fp_bd_emupage_allocmap */
 	spinlock_t bd_emupage_lock;
 	/* bitmap tracking allocation of fp_bd_emupage */
