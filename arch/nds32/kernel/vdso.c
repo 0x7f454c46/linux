@@ -175,7 +175,6 @@ int arch_setup_additional_pages(struct linux_binprm *bprm, int uses_interp)
 
 	/*Map vdso to user space */
 	vdso_base += PAGE_SIZE;
-	mm->context.vdso = (void *)vdso_base;
 	vma = _install_special_mapping(mm, vdso_base, vdso_text_len,
 				       VM_READ | VM_EXEC |
 				       VM_MAYREAD | VM_MAYWRITE | VM_MAYEXEC,
@@ -185,11 +184,9 @@ int arch_setup_additional_pages(struct linux_binprm *bprm, int uses_interp)
 		goto up_fail;
 	}
 
-	mmap_write_unlock(mm);
-	return 0;
+	mm->context.vdso = (void *)vdso_base;
 
 up_fail:
-	mm->context.vdso = NULL;
 	mmap_write_unlock(mm);
 	return ret;
 }

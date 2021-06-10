@@ -227,34 +227,28 @@ static int __setup_additional_pages(enum vdso_abi abi,
 	vdso_mapping_len = vdso_text_len + VVAR_NR_PAGES * PAGE_SIZE;
 
 	vdso_base = get_unmapped_area(NULL, 0, vdso_mapping_len, 0, 0);
-	if (IS_ERR_VALUE(vdso_base)) {
-		ret = ERR_PTR(vdso_base);
-		goto up_fail;
-	}
+	if (IS_ERR_VALUE(vdso_base))
+		return vdso_base;
 
 	ret = _install_special_mapping(mm, vdso_base, VVAR_NR_PAGES * PAGE_SIZE,
 				       VM_READ|VM_MAYREAD|VM_PFNMAP,
 				       vdso_info[abi].dm);
 	if (IS_ERR(ret))
-		goto up_fail;
+		return PTR_ERR(ret);
 
 	if (IS_ENABLED(CONFIG_ARM64_BTI_KERNEL) && system_supports_bti())
 		gp_flags = VM_ARM64_BTI;
 
 	vdso_base += VVAR_NR_PAGES * PAGE_SIZE;
-	mm->context.vdso = (void *)vdso_base;
 	ret = _install_special_mapping(mm, vdso_base, vdso_text_len,
 				       VM_READ|VM_EXEC|gp_flags|
 				       VM_MAYREAD|VM_MAYWRITE|VM_MAYEXEC,
 				       vdso_info[abi].cm);
 	if (IS_ERR(ret))
-		goto up_fail;
+		return PTR_ERR(ret);
 
+	mm->context.vdso = (void *)vdso_base;
 	return 0;
-
-up_fail:
-	mm->context.vdso = NULL;
-	return PTR_ERR(ret);
 }
 
 #ifdef CONFIG_COMPAT

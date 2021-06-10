@@ -238,8 +238,6 @@ void arm_install_vdso(struct mm_struct *mm, unsigned long addr)
 	struct vm_area_struct *vma;
 	unsigned long len;
 
-	mm->context.vdso = 0;
-
 	if (vdso_text_pagelist == NULL)
 		return;
 

@@ -390,7 +390,6 @@ static int map_vdso(const struct vdso_image *image,
 	}
 
 	text_start = addr - image->sym_vvar_start;
-	current->mm->context.vdso = (void __user *)text_start;
 
 	/*
 	 * MAYWRITE to allow gdb to COW and set breakpoints
@@ -412,16 +411,14 @@ static int map_vdso(const struct vdso_image *image,
 				       -image->sym_vvar_start,
 				       VM_READ|VM_MAYREAD,
 				       &vvar_mapping);
-
 	if (IS_ERR(vma)) {
 		ret = PTR_ERR(vma);
 		do_munmap(mm, text_start, image->size, NULL);
+	} else {
+		current->mm->context.vdso = (void __user *)text_start;
 	}
 
 up_fail:
-	if (ret)
-		current->mm->context.vdso = NULL;
-
 	mmap_write_unlock(mm);
 	return ret;
 }
