@@ -57,29 +57,6 @@ enum vvar_pages {
 	VVAR_NR_PAGES,
 };
 
-static int vdso_mremap(const struct vm_special_mapping *sm, struct vm_area_struct *new_vma,
-		       unsigned long text_size)
-{
-	unsigned long new_size = new_vma->vm_end - new_vma->vm_start;
-
-	if (new_size != text_size)
-		return -EINVAL;
-
-	current->mm->context.vdso = (void __user *)new_vma->vm_start;
-
-	return 0;
-}
-
-static int vdso32_mremap(const struct vm_special_mapping *sm, struct vm_area_struct *new_vma)
-{
-	return vdso_mremap(sm, new_vma, &vdso32_end - &vdso32_start);
-}
-
-static int vdso64_mremap(const struct vm_special_mapping *sm, struct vm_area_struct *new_vma)
-{
-	return vdso_mremap(sm, new_vma, &vdso64_end - &vdso64_start);
-}
-
 static vm_fault_t vvar_fault(const struct vm_special_mapping *sm,
 			     struct vm_area_struct *vma, struct vm_fault *vmf);
 
@@ -90,12 +67,10 @@ static struct vm_special_mapping vvar_spec __ro_after_init = {
 
 static struct vm_special_mapping vdso32_spec __ro_after_init = {
 	.name = "[vdso]",
-	.mremap = vdso32_mremap,
 };
 
 static struct vm_special_mapping vdso64_spec __ro_after_init = {
 	.name = "[vdso]",
-	.mremap = vdso64_mremap,
 };
 
 #ifdef CONFIG_TIME_NS
@@ -251,7 +226,7 @@ static int __arch_setup_additional_pages(unsigned long *sysinfo_ehdr)
 	if (IS_ERR(vma)) {
 		do_munmap(mm, vdso_base, vvar_size, NULL);
 	} else {
-		mm->context.vdso = (void __user *)vdso_base + vvar_size;
+		mm->vdso_base = (void __user *)vdso_base + vvar_size;
 		*sysinfo_ehdr = vdso_base + vvar_size;
 	}
 
@@ -263,14 +238,10 @@ int arch_setup_additional_pages(unsigned long *sysinfo_ehdr)
 	struct mm_struct *mm = current->mm;
 	int rc;
 
-	mm->context.vdso = NULL;
-
 	if (mmap_write_lock_killable(mm))
 		return -EINTR;
 
 	rc = __arch_setup_additional_pages(sysinfo_ehdr);
-	if (rc)
-		mm->context.vdso = NULL;
 
 	mmap_write_unlock(mm);
 	return rc;

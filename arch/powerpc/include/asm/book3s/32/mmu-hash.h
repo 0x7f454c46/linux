@@ -90,7 +90,6 @@ struct hash_pte {
 
 typedef struct {
 	unsigned long id;
-	void __user *vdso;
 } mm_context_t;
 
 void update_bats(void);

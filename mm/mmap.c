@@ -2821,13 +2821,6 @@ int __do_munmap(struct mm_struct *mm, unsigned long start, size_t len,
 	if (len == 0)
 		return -EINVAL;
 
-	/*
-	 * arch_unmap() might do unmaps itself.  It must be called
-	 * and finish any rbtree manipulation before this code
-	 * runs and also starts to manipulate the rbtree.
-	 */
-	arch_unmap(mm, start, end);
-
 	/* Find the first overlapping VMA */
 	vma = find_vma(mm, start);
 	if (!vma)

@@ -111,7 +111,6 @@ typedef struct {
 
 	struct hash_mm_context *hash_context;
 
-	void __user *vdso;
 	/*
 	 * pagetable fragment support
 	 */

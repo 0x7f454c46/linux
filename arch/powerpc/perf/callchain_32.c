@@ -59,8 +59,8 @@ static int is_sigreturn_32_address(unsigned int nip, unsigned int fp)
 {
 	if (nip == fp + offsetof(struct signal_frame_32, mctx.mc_pad))
 		return 1;
-	if (current->mm->context.vdso &&
-	    nip == VDSO32_SYMBOL(current->mm->context.vdso, sigtramp32))
+	if (current->mm->vdso_base != (void __user *)UNMAPPED_VDSO_BASE &&
+	    nip == VDSO32_SYMBOL(current->mm->vdso_base, sigtramp32))
 		return 1;
 	return 0;
 }
@@ -70,8 +70,8 @@ static int is_rt_sigreturn_32_address(unsigned int nip, unsigned int fp)
 	if (nip == fp + offsetof(struct rt_signal_frame_32,
 				 uc.uc_mcontext.mc_pad))
 		return 1;
-	if (current->mm->context.vdso &&
-	    nip == VDSO32_SYMBOL(current->mm->context.vdso, sigtramp_rt32))
+	if (current->mm->vdso_base != (void __user *)UNMAPPED_VDSO_BASE &&
+	    nip == VDSO32_SYMBOL(current->mm->vdso_base, sigtramp_rt32))
 		return 1;
 	return 0;
 }

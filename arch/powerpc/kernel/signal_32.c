@@ -824,8 +824,8 @@ int handle_rt_signal32(struct ksignal *ksig, sigset_t *oldset,
 	}
 
 	/* Save user registers on the stack */
-	if (tsk->mm->context.vdso) {
-		tramp = VDSO32_SYMBOL(tsk->mm->context.vdso, sigtramp_rt32);
+	if (tsk->mm->vdso_base != (void __user *)UNMAPPED_VDSO_BASE) {
+		tramp = VDSO32_SYMBOL(tsk->mm->vdso_base, sigtramp_rt32);
 	} else {
 		tramp = (unsigned long)mctx->mc_pad;
 		/* Set up the sigreturn trampoline: li r0,sigret; sc */
@@ -922,8 +922,8 @@ int handle_signal32(struct ksignal *ksig, sigset_t *oldset,
 	else
 		unsafe_save_user_regs(regs, mctx, tm_mctx, 1, failed);
 
-	if (tsk->mm->context.vdso) {
-		tramp = VDSO32_SYMBOL(tsk->mm->context.vdso, sigtramp32);
+	if (tsk->mm->vdso_base != (void __user *)UNMAPPED_VDSO_BASE) {
+		tramp = VDSO32_SYMBOL(tsk->mm->vdso_base, sigtramp32);
 	} else {
 		tramp = (unsigned long)mctx->mc_pad;
 		/* Set up the sigreturn trampoline: li r0,sigret; sc */
