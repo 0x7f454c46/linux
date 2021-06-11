@@ -6,6 +6,7 @@ sysret_ss_attrs
 syscall_nt
 ptrace_syscall
 test_mremap_vdso
+test_munmap_vdso
 check_initial_reg_state
 sigreturn
 ldt_gdt
