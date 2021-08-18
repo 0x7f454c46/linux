@@ -76,7 +76,8 @@ struct sock_args {
 		     has_grp:1,
 		     has_expected_laddr:1,
 		     has_expected_raddr:1,
-		     bind_test_only:1;
+		     bind_test_only:1,
+		     use_md5:1;
 
 	unsigned short port;
 
@@ -96,7 +97,6 @@ struct sock_args {
 	const char *serverns;
 
 	const char *password;
-	const char *client_pw;
 	/* prefix for MD5 password */
 	const char *md5_prefix_str;
 	union {
@@ -1583,7 +1583,7 @@ static int do_server(struct sock_args *args, int ipc_fd)
 		return rc;
 	}
 
-	if (args->password && tcp_md5_remote(lsd, args)) {
+	if (args->use_md5 && tcp_md5_remote(lsd, args)) {
 		close(lsd);
 		goto err_exit;
 	}
@@ -1710,7 +1710,7 @@ static int connectsock(void *addr, socklen_t alen, struct sock_args *args)
 	if (args->type != SOCK_STREAM && !args->datagram_connect)
 		goto out;
 
-	if (args->password && tcp_md5sig(sd, addr, alen, args))
+	if (args->use_md5 && tcp_md5sig(sd, addr, alen, args))
 		goto err;
 
 	if (args->bind_test_only)
@@ -1790,8 +1790,6 @@ static int do_client(struct sock_args *args)
 		alen = sizeof(sin6);
 		break;
 	}
-
-	args->password = args->client_pw;
 
 	if (args->has_grp)
 		sd = msock_client(args);
@@ -1902,7 +1900,7 @@ static int ipc_parent(int cpid, int fd, struct sock_args *args)
 	return client_status;
 }
 
-#define GETOPT_STR  "sr:l:c:Q:p:t:g:P:DRn:M:X:m:d:I:BN:O:SUCi6xL:0:1:2:3:Fbqf"
+#define GETOPT_STR  "sr:l:c:Q:p:t:g:P:DRn:MX:m:d:I:BN:O:SUCi6xL:0:1:2:3:Fbqf"
 #define OPT_FORCE_BIND_KEY_IFINDEX 1001
 #define OPT_NO_BIND_KEY_IFINDEX 1002
 
@@ -1948,8 +1946,8 @@ static void print_usage(char *prog)
 	"    -L len        send random message of given length\n"
 	"    -n num        number of times to send message\n"
 	"\n"
-	"    -M password   use MD5 sum protection\n"
-	"    -X password   MD5 password for client mode\n"
+	"    -M            use MD5 sum protection\n"
+	"    -X password   MD5 password\n"
 	"    -m prefix/len prefix and length to use for MD5 key\n"
 	"    --no-bind-key-ifindex: Force TCP_MD5SIG_FLAG_IFINDEX off\n"
 	"    --force-bind-key-ifindex: Force TCP_MD5SIG_FLAG_IFINDEX on\n"
@@ -2068,7 +2066,7 @@ int main(int argc, char *argv[])
 			msg = random_msg(atoi(optarg));
 			break;
 		case 'M':
-			args.password = optarg;
+			args.use_md5 = 1;
 			break;
 		case OPT_FORCE_BIND_KEY_IFINDEX:
 			args.bind_key_ifindex = 1;
@@ -2077,7 +2075,7 @@ int main(int argc, char *argv[])
 			args.bind_key_ifindex = -1;
 			break;
 		case 'X':
-			args.client_pw = optarg;
+			args.password = optarg;
 			break;
 		case 'm':
 			args.md5_prefix_str = optarg;
@@ -2141,14 +2139,14 @@ int main(int argc, char *argv[])
 		}
 	}
 
-	if (args.password &&
-	    ((!args.has_remote_ip && !args.md5_prefix_str) ||
+	if (args.password && (!args.use_md5 ||
+	      (!args.has_remote_ip && !args.md5_prefix_str) ||
 	      args.type != SOCK_STREAM)) {
 		log_error("MD5 passwords apply to TCP only and require a remote ip for the password\n");
 		return 1;
 	}
 
-	if (args.md5_prefix_str && !args.password) {
+	if ((args.md5_prefix_str || args.use_md5) && !args.password) {
 		log_error("Prefix range for MD5 protection specified without a password\n");
 		return 1;
 	}
