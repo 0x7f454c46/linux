@@ -98,11 +98,11 @@ struct sock_args {
 
 	const char *password;
 	/* prefix for MD5 password */
-	const char *md5_prefix_str;
+	const char *auth_prefix_str;
 	union {
 		struct sockaddr_in v4;
 		struct sockaddr_in6 v6;
-	} md5_prefix;
+	} auth_prefix;
 	unsigned int prefix_len;
 	/* 0: default, -1: force off, +1: force on */
 	int bind_key_ifindex;
@@ -275,7 +275,7 @@ static int tcp_md5sig(int sd, void *addr, socklen_t alen, struct sock_args *args
 		md5sig.tcpm_flags |= TCP_MD5SIG_FLAG_PREFIX;
 
 		md5sig.tcpm_prefixlen = args->prefix_len;
-		addr = &args->md5_prefix;
+		addr = &args->auth_prefix;
 	}
 	memcpy(&md5sig.tcpm_addr, addr, alen);
 
@@ -315,13 +315,13 @@ static int tcp_md5_remote(int sd, struct sock_args *args)
 	switch (args->version) {
 	case AF_INET:
 		sin.sin_port = htons(args->port);
-		sin.sin_addr = args->md5_prefix.v4.sin_addr;
+		sin.sin_addr = args->auth_prefix.v4.sin_addr;
 		addr = &sin;
 		alen = sizeof(sin);
 		break;
 	case AF_INET6:
 		sin6.sin6_port = htons(args->port);
-		sin6.sin6_addr = args->md5_prefix.v6.sin6_addr;
+		sin6.sin6_addr = args->auth_prefix.v6.sin6_addr;
 		addr = &sin6;
 		alen = sizeof(sin6);
 		break;
@@ -784,11 +784,11 @@ static int convert_addr(struct sock_args *args, const char *_str,
 	case ADDR_TYPE_MD5_PREFIX:
 		desc = "md5 prefix";
 		if (family == AF_INET) {
-			args->md5_prefix.v4.sin_family = AF_INET;
-			addr = &args->md5_prefix.v4.sin_addr;
+			args->auth_prefix.v4.sin_family = AF_INET;
+			addr = &args->auth_prefix.v4.sin_addr;
 		} else if (family == AF_INET6) {
-			args->md5_prefix.v6.sin6_family = AF_INET6;
-			addr = &args->md5_prefix.v6.sin6_addr;
+			args->auth_prefix.v6.sin6_family = AF_INET6;
+			addr = &args->auth_prefix.v6.sin6_addr;
 		} else
 			return 1;
 
@@ -871,8 +871,8 @@ static int validate_addresses(struct sock_args *args)
 	    convert_addr(args, args->remote_addr_str, ADDR_TYPE_REMOTE) < 0)
 		return 1;
 
-	if (args->md5_prefix_str &&
-	    convert_addr(args, args->md5_prefix_str,
+	if (args->auth_prefix_str &&
+	    convert_addr(args, args->auth_prefix_str,
 			 ADDR_TYPE_MD5_PREFIX) < 0)
 		return 1;
 
@@ -2078,7 +2078,7 @@ int main(int argc, char *argv[])
 			args.password = optarg;
 			break;
 		case 'm':
-			args.md5_prefix_str = optarg;
+			args.auth_prefix_str = optarg;
 			break;
 		case 'S':
 			args.use_setsockopt = 1;
@@ -2140,13 +2140,13 @@ int main(int argc, char *argv[])
 	}
 
 	if (args.password && (!args.use_md5 ||
-	      (!args.has_remote_ip && !args.md5_prefix_str) ||
+	      (!args.has_remote_ip && !args.auth_prefix_str) ||
 	      args.type != SOCK_STREAM)) {
 		log_error("MD5 passwords apply to TCP only and require a remote ip for the password\n");
 		return 1;
 	}
 
-	if ((args.md5_prefix_str || args.use_md5) && !args.password) {
+	if ((args.auth_prefix_str || args.use_md5) && !args.password) {
 		log_error("Prefix range for MD5 protection specified without a password\n");
 		return 1;
 	}
