@@ -79,7 +79,9 @@ struct sock_args {
 		     bind_test_only:1,
 		     client_dontroute:1,
 		     server_dontroute:1,
-		     use_md5:1;
+		     use_md5:1,
+		     use_tcpao:1,
+		     tcp_ao_excopts:1;
 
 	unsigned short port;
 
@@ -99,7 +101,7 @@ struct sock_args {
 	const char *serverns;
 
 	const char *password;
-	/* prefix for MD5 password */
+	/* prefix for MD5/TCP-AO password */
 	const char *auth_prefix_str;
 	union {
 		struct sockaddr_in v4;
@@ -108,6 +110,8 @@ struct sock_args {
 	unsigned int prefix_len;
 	/* 0: default, -1: force off, +1: force on */
 	int bind_key_ifindex;
+	unsigned int tcp_ao_sndid, tcp_ao_rcvid, tcp_ao_maclen;
+	char *tcp_ao_algo;
 
 	/* expected addresses and device index for connection */
 	const char *expected_dev;
@@ -303,7 +307,67 @@ static int tcp_md5sig(int sd, void *addr, socklen_t alen, struct sock_args *args
 	return rc;
 }
 
-static int tcp_md5_remote(int sd, struct sock_args *args)
+static int tcp_ao(int sd, void *addr, socklen_t alen, struct sock_args *args)
+{
+	int keylen = strlen(args->password);
+	struct tcp_ao_add ao = {};
+	int opt = TCP_AO_ADD_KEY;
+	int rc;
+
+	if (keylen > TCP_AO_MAXKEYLEN) {
+		log_error("key length is too big");
+		return -1;
+	}
+	ao.keylen = keylen;
+	memcpy(ao.key, args->password, keylen);
+	if (args->tcp_ao_algo)
+		strcpy(ao.alg_name, args->tcp_ao_algo);
+	else
+		strcpy(ao.alg_name, "hmac(sha1)");
+	if (args->tcp_ao_maclen)
+		ao.maclen = args->tcp_ao_maclen;
+
+	ao.sndid = args->tcp_ao_sndid;
+	ao.rcvid = args->tcp_ao_rcvid;
+	if (args->tcp_ao_excopts)
+		ao.keyflags |= TCP_AO_KEYF_EXCLUDE_OPT;
+
+	if (args->prefix_len) {
+		ao.prefix = args->prefix_len;
+	} else {
+		switch (args->version) {
+		case AF_INET:
+			ao.prefix = 32;
+			break;
+		case AF_INET6:
+			ao.prefix = 128;
+			break;
+		default:
+			log_error("unknown address family\n");
+			exit(1);
+		}
+	}
+	memcpy(&ao.addr, addr, alen);
+
+	/* FIXME: Remove once matching by port is supported */
+	if (args->version == AF_INET) {
+		struct sockaddr_in *sin = (void *)&ao.addr;
+
+		sin->sin_port = htons(0);
+	} else if (args->version == AF_INET6) {
+		struct sockaddr_in6 *sin6 = (void *)&ao.addr;
+
+		sin6->sin6_port = htons(0);
+	}
+
+	rc = setsockopt(sd, IPPROTO_TCP, opt, &ao, sizeof(ao));
+	if (rc < 0)
+		log_err_errno("setsockopt(TCP_AO_ADD_KEY)");
+
+	return rc;
+}
+
+static int tcp_auth_remote(int sd, struct sock_args *args)
 {
 	struct sockaddr_in sin = {
 		.sin_family = AF_INET,
@@ -332,7 +396,10 @@ static int tcp_md5_remote(int sd, struct sock_args *args)
 		exit(1);
 	}
 
-	if (tcp_md5sig(sd, addr, alen, args))
+	if (args->use_md5 && tcp_md5sig(sd, addr, alen, args))
+		return -1;
+
+	if (args->use_tcpao && tcp_ao(sd, addr, alen, args))
 		return -1;
 
 	return 0;
@@ -1608,10 +1675,8 @@ static int do_server(struct sock_args *args, int ipc_fd)
 		return rc;
 	}
 
-	if (args->use_md5 && tcp_md5_remote(lsd, args)) {
-		close(lsd);
-		goto err_exit;
-	}
+	if (tcp_auth_remote(lsd, args))
+		goto err_close;
 
 	ipc_write(ipc_fd, 1);
 	while (1) {
@@ -1660,6 +1725,8 @@ static int do_server(struct sock_args *args, int ipc_fd)
 	close(lsd);
 
 	return rc;
+err_close:
+	close(lsd);
 err_exit:
 	ipc_write(ipc_fd, 0);
 	return 1;
@@ -1739,6 +1806,9 @@ static int connectsock(void *addr, socklen_t alen, struct sock_args *args)
 		goto out;
 
 	if (args->use_md5 && tcp_md5sig(sd, addr, alen, args))
+		goto err;
+
+	if (args->use_tcpao && tcp_ao(sd, addr, alen, args))
 		goto err;
 
 	if (args->bind_test_only)
@@ -1868,6 +1938,44 @@ static char *random_msg(int len)
 	return m;
 }
 
+static void strip_newlines(char *str)
+{
+	size_t i = strlen(str);
+
+	for (; i > 0; i--) {
+		if (str[i - 1] != '\n')
+			return;
+		str[i - 1] = '\0';
+	}
+}
+
+static int set_tcp_ao_param(struct sock_args *args, const char *opt)
+{
+	char *end, *sep = strstr(opt, ":");
+	unsigned long tmp;
+
+	errno = 0;
+	if (sep == NULL)
+		goto err_fail;
+
+	tmp = strtoul(opt, &end, 0);
+	if (errno || tmp > 255 || end != sep)
+		goto err_fail;
+	args->tcp_ao_sndid = (unsigned int) tmp;
+
+	tmp = strtoul(++sep, &end, 0);
+	if (errno || tmp > 255 || (*end != '\n' && *end != '\0'))
+		goto err_fail;
+	args->tcp_ao_rcvid = (unsigned int) tmp;
+
+	return 0;
+
+err_fail:
+	fprintf(stderr, "TCP-AO argument format is sndid:rcvid where ids in [0,255]\n"
+			"Example: -T 100:200\n");
+	return -1;
+}
+
 static int ipc_child(int fd, struct sock_args *args)
 {
 	char *outbuf, *errbuf;
@@ -1929,17 +2037,23 @@ static int ipc_parent(int cpid, int fd, struct sock_args *args)
 	return client_status;
 }
 
-#define GETOPT_STR  "sr:l:c:Q:p:t:g:P:DRn:MX:m:d:I:BN:O:SUCi6xL:0:1:2:3:Fbqf"
-#define OPT_FORCE_BIND_KEY_IFINDEX 1001
-#define OPT_NO_BIND_KEY_IFINDEX 1002
-#define OPT_CLIENT_DONTROUTE 1003
-#define OPT_SERVER_DONTROUTE 1004
+#define GETOPT_STR  "sr:l:c:Q:p:t:g:P:DRn:MT:X:m:d:I:BN:O:SUCi6xL:0:1:2:3:Fbqf"
+#define OPT_FORCE_BIND_KEY_IFINDEX	1001
+#define OPT_NO_BIND_KEY_IFINDEX		1002
+#define OPT_CLIENT_DONTROUTE		1003
+#define OPT_SERVER_DONTROUTE		1004
+#define OPT_TCPAO_ALGO			1005
+#define OPT_TCPAO_MACLEN		1006
+#define OPT_TCPAO_EXCOPTS		1007
 
 static struct option long_opts[] = {
-	{"force-bind-key-ifindex", 0, 0, OPT_FORCE_BIND_KEY_IFINDEX},
-	{"no-bind-key-ifindex", 0, 0, OPT_NO_BIND_KEY_IFINDEX},
-	{"client-dontroute", 0, 0, OPT_CLIENT_DONTROUTE},
-	{"server-dontroute", 0, 0, OPT_SERVER_DONTROUTE},
+	{"force-bind-key-ifindex",	0, 0, OPT_FORCE_BIND_KEY_IFINDEX},
+	{"no-bind-key-ifindex",		0, 0, OPT_NO_BIND_KEY_IFINDEX},
+	{"client-dontroute",		0, 0, OPT_CLIENT_DONTROUTE},
+	{"server-dontroute",		0, 0, OPT_SERVER_DONTROUTE},
+	{"tcpao_algo",			1, 0, OPT_TCPAO_ALGO },
+	{"tcpao_maclen",		1, 0, OPT_TCPAO_MACLEN },
+	{"tcpao_excopts",		0, 0, OPT_TCPAO_EXCOPTS },
 	{0, 0, 0, 0}
 };
 
@@ -1980,8 +2094,12 @@ static void print_usage(char *prog)
 	"    -n num        number of times to send message\n"
 	"\n"
 	"    -M            use MD5 sum protection\n"
-	"    -X password   MD5 password\n"
-	"    -m prefix/len prefix and length to use for MD5 key\n"
+	"    -T snd:rcvid  use TCP authopt (RFC5925) with snd/rcv ids\n"
+	"    --tcpao_algo=algo      TCP-AO hashing algorithm [valid with -T]\n"
+	"    --tcpao_maclen=maclen  TCP-AO MAC length [valid with -T]\n"
+	"    --tcpao_excopts        Exclude TCP options [valid with -T]\n"
+	"    -X password   MD5/TCP-AO password\n"
+	"    -m prefix/len prefix and length to use for MD5/TCP-AO key\n"
 	"    --no-bind-key-ifindex: Force TCP_MD5SIG_FLAG_IFINDEX off\n"
 	"    --force-bind-key-ifindex: Force TCP_MD5SIG_FLAG_IFINDEX on\n"
 	"        (default: only if -I is passed)\n"
@@ -2119,6 +2237,29 @@ int main(int argc, char *argv[])
 		case OPT_SERVER_DONTROUTE:
 			args.server_dontroute = 1;
 			break;
+		case OPT_TCPAO_ALGO:
+			args.tcp_ao_algo = strdup(optarg);
+			strip_newlines(args.tcp_ao_algo);
+			if (strlen(args.tcp_ao_algo) == 0) {
+				fprintf(stderr, "Invalid argument --tcpao_algo=%s\n", optarg);
+				return 1;
+			}
+			break;
+		case OPT_TCPAO_MACLEN:
+			if (str_to_uint(optarg, 1, 255, &tmp) != 0) {
+				fprintf(stderr, "Invalid --tcpao_maclen=%s\n", optarg);
+				return 1;
+			}
+			args.tcp_ao_maclen = tmp;
+			break;
+		case OPT_TCPAO_EXCOPTS:
+			args.tcp_ao_excopts = 1;
+			break;
+		case 'T':
+			args.use_tcpao = 1;
+			if (set_tcp_ao_param(&args, optarg))
+				return 1;
+			break;
 		case 'X':
 			args.password = optarg;
 			break;
@@ -2184,15 +2325,15 @@ int main(int argc, char *argv[])
 		}
 	}
 
-	if (args.password && (!args.use_md5 ||
+	if (args.password && ((!args.use_md5 && !args.use_tcpao) ||
 	      (!args.has_remote_ip && !args.auth_prefix_str) ||
 	      args.type != SOCK_STREAM)) {
-		log_error("MD5 passwords apply to TCP only and require a remote ip for the password\n");
+		log_error("TCP-MD5/TCP-AO passwords apply to TCP only and require a remote ip for the password\n");
 		return 1;
 	}
 
-	if ((args.auth_prefix_str || args.use_md5) && !args.password) {
-		log_error("Prefix range for MD5 protection specified without a password\n");
+	if ((args.auth_prefix_str || args.use_md5 || args.use_tcpao) && !args.password) {
+		log_error("Prefix range for TCP-MD5/TCP-AO protection specified without a password\n");
 		return 1;
 	}
 
