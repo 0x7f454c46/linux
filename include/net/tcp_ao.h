@@ -87,4 +87,19 @@ struct tcp_ao_info {
 	u32			rcv_sne_seq;
 };
 
+#ifdef CONFIG_TCP_AO
+int tcp_parse_ao(struct sock *sk, int cmd, unsigned short int family,
+		 sockptr_t optval, int optlen);
+void tcp_ao_destroy_sock(struct sock *sk);
+/* ipv4 specific functions */
+int tcp_v4_parse_ao(struct sock *sk, int optname, sockptr_t optval, int optlen);
+/* ipv6 specific functions */
+int tcp_v6_parse_ao(struct sock *sk, int cmd,
+		    sockptr_t optval, int optlen);
+#else
+static inline void tcp_ao_destroy_sock(struct sock *sk)
+{
+}
+#endif
+
 #endif /* _TCP_AO_H */

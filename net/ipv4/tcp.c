@@ -3713,6 +3713,23 @@ int do_tcp_setsockopt(struct sock *sk, int level, int optname,
 		__tcp_sock_set_quickack(sk, val);
 		break;
 
+#ifdef CONFIG_TCP_AO
+	case TCP_AO:
+	case TCP_AO_DEL:
+	case TCP_AO_MOD: {
+		/* If this is the first TCP-AO setsockopt() on the socket,
+		 * sk_state has to be LISTEN or CLOSE
+		 */
+		if (((1 << sk->sk_state) & (TCPF_LISTEN | TCPF_CLOSE)) ||
+		    rcu_dereference_protected(tcp_sk(sk)->ao_info,
+					      lockdep_sock_is_held(sk)))
+			err = tp->af_specific->ao_parse(sk, optname, optval,
+							optlen);
+		else
+			err = -EISCONN;
+		break;
+	}
+#endif
 #ifdef CONFIG_TCP_MD5SIG
 	case TCP_MD5SIG:
 	case TCP_MD5SIG_EXT:

@@ -129,6 +129,9 @@ enum {
 
 #define TCP_TX_DELAY		37	/* delay outgoing packets by XX usec */
 
+#define TCP_AO			38	/* (Add/Set MKT) */
+#define TCP_AO_DEL		39	/* (Delete MKT) */
+#define TCP_AO_MOD		40	/* (Modify MKT) */
 
 #define TCP_REPAIR_ON		1
 #define TCP_REPAIR_OFF		0
@@ -349,6 +352,45 @@ struct tcp_diag_md5sig {
 };
 
 #define TCP_AO_MAXKEYLEN	80
+
+#define TCP_AO_KEYF_IFINDEX	(1 << 0)	/* L3 ifindex for VRF */
+
+#define TCP_AO_CMDF_CURR	(1 << 0)	/* Only checks field sndid */
+#define TCP_AO_CMDF_NEXT	(1 << 1)	/* Only checks field rcvid */
+
+struct tcp_ao { /* setsockopt(TCP_AO) */
+	struct __kernel_sockaddr_storage tcpa_addr;
+	char	tcpa_alg_name[64];
+	__s32	tcpa_ifindex;
+	__u16	tcpa_flags;
+	__u8	tcpa_prefix;
+	__u8	tcpa_sndid;
+	__u8	tcpa_rcvid;
+	__u8	tcpa_maclen;
+	__u8	tcpa_keyflags;
+	__u8	tcpa_keylen;
+	__u8	tcpa_key[TCP_AO_MAXKEYLEN];
+	__u32	reserved;	/* padding, must be 0 */
+} __attribute__((aligned(8)));
+
+struct tcp_ao_del { /* setsockopt(TCP_AO_DEL) */
+	struct __kernel_sockaddr_storage tcpa_addr;
+	__s32	tcpa_ifindex;
+	__u16	tcpa_flags;
+	__u8	tcpa_prefix;
+	__u8	tcpa_sndid;
+	__u8	tcpa_rcvid;
+	__u8	tcpa_current;
+	__u8	tcpa_rnext;
+	__u8	tcpa_keyflags;
+	__u32	reserved;	/* padding, must be 0 */
+} __attribute__((aligned(8)));
+
+struct tcp_ao_mod { /* setsockopt(TCP_AO_MOD) */
+	__u16	tcpa_flags;
+	__u8	tcpa_current;
+	__u8	tcpa_rnext;
+} __attribute__((aligned(8)));
 
 /* setsockopt(fd, IPPROTO_TCP, TCP_ZEROCOPY_RECEIVE, ...) */
 
