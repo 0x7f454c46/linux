@@ -684,16 +684,19 @@ static void tcp_v4_send_reset(const struct sock *sk, struct sk_buff *skb)
 		__be32 opt[OPTION_BYTES / sizeof(__be32)];
 	} rep;
 	struct ip_reply_arg arg;
-#ifdef CONFIG_TCP_MD5SIG
-	struct tcp_md5sig_key *key = NULL;
-	const __u8 *md5_hash_location = NULL;
-	unsigned char newhash[16];
-	int genhash;
-	struct sock *sk1 = NULL;
-#endif
 	u64 transmit_time = 0;
 	struct sock *ctl_sk;
 	struct net *net;
+#if defined(CONFIG_TCP_MD5SIG) || defined(CONFIG_TCP_AO)
+	const __u8 *md5_hash_location = NULL;
+	const struct tcp_ao_hdr *aoh;
+#ifdef CONFIG_TCP_MD5SIG
+	struct tcp_md5sig_key *key = NULL;
+	unsigned char newhash[16];
+	struct sock *sk1 = NULL;
+	int genhash;
+#endif
+#endif
 
 	/* Never send a reset in response to a reset. */
 	if (th->rst)
@@ -725,12 +728,14 @@ static void tcp_v4_send_reset(const struct sock *sk, struct sk_buff *skb)
 	arg.iov[0].iov_len  = sizeof(rep.th);
 
 	net = sk ? sock_net(sk) : dev_net(skb_dst(skb)->dev);
-#ifdef CONFIG_TCP_MD5SIG
+#if defined(CONFIG_TCP_MD5SIG) || defined(CONFIG_TCP_AO)
 	/* Invalid TCP option size or twice included auth */
-	if (tcp_parse_auth_options(tcp_hdr(skb), &md5_hash_location, NULL))
+	if (tcp_parse_auth_options(tcp_hdr(skb), &md5_hash_location, &aoh))
 		return;
 
 	rcu_read_lock();
+#endif
+#ifdef CONFIG_TCP_MD5SIG
 	if (sk && sk_fullsock(sk)) {
 		const union tcp_md5_addr *addr;
 		int l3index;
@@ -792,6 +797,63 @@ static void tcp_v4_send_reset(const struct sock *sk, struct sk_buff *skb)
 				     ip_hdr(skb)->daddr, &rep.th);
 	}
 #endif
+#ifdef CONFIG_TCP_AO
+	/* if (!sk || sk->sk_state == TCP_LISTEN) then the initial sisn/disn
+	 * are unknown. Skip TCP-AO signing.
+	 * Contrary to TCP-MD5 unsigned RST will be sent if there was AO sign
+	 * in segment, but TCP-AO signing isn't possible for reply.
+	 */
+	if (sk && aoh && sk->sk_state != TCP_LISTEN) {
+		char traffic_key[TCP_AO_MAX_HASH_SIZE] __tcp_ao_key_align;
+		struct tcp_ao_key *ao_key, *rnext_key;
+		struct tcp_ao_info *ao_info;
+		u32 ao_sne;
+		u8 keyid;
+
+		/* TODO: reqsk support */
+		if (sk->sk_state == TCP_NEW_SYN_RECV)
+			goto skip_ao_sign;
+
+		ao_info = rcu_dereference(tcp_sk(sk)->ao_info);
+
+		if (!ao_info)
+			goto skip_ao_sign;
+
+		ao_key = tcp_ao_established_key(ao_info, aoh->rnext_keyid, -1);
+		if (!ao_key)
+			goto skip_ao_sign;
+
+		/* XXX: optimize by using cached traffic key depending
+		 * on socket state
+		 */
+		if (tcp_v4_ao_calc_key_sk(ao_key, traffic_key, sk,
+					  ao_info->lisn, ao_info->risn, true))
+			goto out;
+
+		/* rcv_next holds the rcv_next of the peer, make keyid
+		 * hold our rcv_next
+		 */
+		rnext_key = ao_info->rnext_key;
+		keyid = rnext_key->rcvid;
+		ao_sne = tcp_ao_compute_sne(ao_info->snd_sne,
+					    ao_info->snd_sne_seq,
+					    ntohl(rep.th.seq));
+
+		rep.opt[0] = htonl((TCPOPT_AO << 24) |
+				(tcp_ao_len(ao_key) << 16) |
+				(aoh->rnext_keyid << 8) | keyid);
+		arg.iov[0].iov_len += round_up(tcp_ao_len(ao_key), 4);
+		rep.th.doff = arg.iov[0].iov_len / 4;
+
+		if (tcp_ao_hash_hdr(AF_INET, (char *)&rep.opt[1],
+				    ao_key, traffic_key,
+				    (union tcp_ao_addr *)&ip_hdr(skb)->saddr,
+				    (union tcp_ao_addr *)&ip_hdr(skb)->daddr,
+				    &rep.th, ao_sne))
+			goto out;
+	}
+skip_ao_sign:
+#endif
 	/* Can't co-exist with TCPMD5, hence check rep.opt[0] */
 	if (rep.opt[0] == 0) {
 		__be32 mrst = mptcp_reset_option(skb);
@@ -848,7 +910,7 @@ static void tcp_v4_send_reset(const struct sock *sk, struct sk_buff *skb)
 	__TCP_INC_STATS(net, TCP_MIB_OUTRSTS);
 	local_bh_enable();
 
-#ifdef CONFIG_TCP_MD5SIG
+#if defined(CONFIG_TCP_MD5SIG) || defined(CONFIG_TCP_AO)
 out:
 	rcu_read_unlock();
 #endif
