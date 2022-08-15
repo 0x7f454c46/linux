@@ -128,3 +128,18 @@ int tcp_v6_parse_ao(struct sock *sk, int cmd,
 	return tcp_parse_ao(sk, cmd, AF_INET6, optval, optlen);
 }
 EXPORT_SYMBOL_GPL(tcp_v6_parse_ao);
+
+int tcp_v6_ao_synack_hash(char *ao_hash, struct tcp_ao_key *ao_key,
+			  struct request_sock *req, const struct sk_buff *skb,
+			  int hash_offset, u32 sne)
+{
+	char traffic_key[TCP_AO_MAX_HASH_SIZE] __tcp_ao_key_align;
+
+	tcp_v6_ao_calc_key_rsk(ao_key, traffic_key, req);
+
+	tcp_ao_hash_skb(AF_INET6, ao_hash, ao_key, req_to_sk(req), skb,
+			traffic_key, hash_offset, sne);
+
+	return 0;
+}
+EXPORT_SYMBOL_GPL(tcp_v6_ao_synack_hash);
