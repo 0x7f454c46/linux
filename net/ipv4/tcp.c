@@ -4392,6 +4392,17 @@ zerocopy_rcv_out:
 		return err;
 	}
 #endif
+#ifdef CONFIG_TCP_AO
+	case TCP_AO_GET: {
+		int err;
+
+		sockopt_lock_sock(sk);
+		err = tcp_ao_get_mkts(sk, optval, optlen);
+		sockopt_release_sock(sk);
+
+		return err;
+	}
+#endif
 	default:
 		return -ENOPROTOOPT;
 	}

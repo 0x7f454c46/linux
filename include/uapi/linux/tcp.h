@@ -132,6 +132,7 @@ enum {
 #define TCP_AO			38	/* (Add/Set MKT) */
 #define TCP_AO_DEL		39	/* (Delete MKT) */
 #define TCP_AO_MOD		40	/* (Modify MKT) */
+#define TCP_AO_GET		41	/* (Get MKTs) */
 
 #define TCP_REPAIR_ON		1
 #define TCP_REPAIR_OFF		0
@@ -364,6 +365,10 @@ struct tcp_diag_md5sig {
 #define TCP_AO_CMDF_NEXT	(1 << 1)	/* Only checks field rcvid */
 #define TCP_AO_CMDF_ACCEPT_ICMP	(1 << 2)	/* Accept incoming ICMPs */
 
+#define TCP_AO_GET_CURR		TCP_AO_CMDF_CURR
+#define TCP_AO_GET_NEXT		TCP_AO_CMDF_NEXT
+#define TCP_AO_GET_ALL		(1 << 2)
+
 struct tcp_ao { /* setsockopt(TCP_AO) */
 	struct __kernel_sockaddr_storage tcpa_addr;
 	char	tcpa_alg_name[64];
@@ -396,6 +401,21 @@ struct tcp_ao_mod { /* setsockopt(TCP_AO_MOD) */
 	__u16	tcpa_flags;
 	__u8	tcpa_current;
 	__u8	tcpa_rnext;
+} __attribute__((aligned(8)));
+
+struct tcp_ao_getsockopt { /* getsockopt(TCP_AO_GET) */
+	struct __kernel_sockaddr_storage addr;
+	char	alg_name[64];
+	__u8	key[TCP_AO_MAXKEYLEN];
+	__u32	nkeys;
+	__u16	flags;
+	__u8	sndid;
+	__u8	rcvid;
+	__u8	prefix;
+	__u8	maclen;
+	__u8	keyflags;
+	__u8	keylen;
+	__s32	ifindex;
 } __attribute__((aligned(8)));
 
 /* setsockopt(fd, IPPROTO_TCP, TCP_ZEROCOPY_RECEIVE, ...) */
