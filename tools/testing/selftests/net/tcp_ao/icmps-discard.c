@@ -43,8 +43,17 @@ const int sk_ip_level	= SOL_IP;
 const int sk_recverr	= IP_RECVERR;
 #endif
 
-#define test_icmps_fail test_fail
-#define test_icmps_ok test_ok
+/*
+ * Server is expected to fail with hard error if
+ * TCP_AO_CMDF_ACCEPT_ICMP is set
+ */
+#ifdef TEST_ICMPS_ACCEPT
+# define test_icmps_fail test_ok
+# define test_icmps_ok test_fail
+#else
+# define test_icmps_fail test_fail
+# define test_icmps_ok test_ok
+#endif
 
 static void serve_interfered(int sk)
 {
@@ -97,6 +106,10 @@ static void *server_fn(void *arg)
 	uint16_t flags = 0;
 
 	lsk = test_listen_socket(this_ip_addr, test_server_port, 1);
+
+#ifdef TEST_ICMPS_ACCEPT
+	flags = TCP_AO_CMDF_ACCEPT_ICMP;
+#endif
 
 	if (test_set_ao(lsk, "password", flags, this_ip_dest, -1, 100, 100))
 		test_error("setsockopt(TCP_AO)");
