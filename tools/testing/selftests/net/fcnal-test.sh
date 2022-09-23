@@ -60,6 +60,8 @@ NSA_IP6=2001:db8:1::1
 NSB_IP6=2001:db8:1::2
 VRF_IP6=2001:db8:3::1
 NS_NET6=2001:db8:1::/120
+NS_NET_MAPPED=::ffff:ac10:100/24
+NSA_IP_MAPPED=::ffff:ac10:101
 
 NSA_LO_IP=172.16.2.1
 NSB_LO_IP=172.16.2.2
@@ -76,6 +78,8 @@ BCAST_IP=255.255.255.255
 
 MD5_PW=abc123
 MD5_WRONG_PW=abc1234
+AO_PW="longer-than-14-bytes-to-work-under-CONFIG_CRYPTO_FIPS_y"
+AO_WRONG_PW="another-long-enough-string"
 
 MCAST=ff02::1
 # set after namespace create
@@ -97,6 +101,11 @@ if [ -f /proc/sys/crypto/fips_enabled ]; then
 	fips_enabled=`cat /proc/sys/crypto/fips_enabled`
 else
 	fips_enabled=0
+fi
+AO_HASH_ALGOS="hmac(sha1) cmac(aes128) hmac(sha512) hmac(sha384) hmac(sha256)"
+AO_HASH_ALGOS+=" hmac(sha224) hmac(sha3-512)"
+if [ "$fips_enabled" = "0" ]; then
+	AO_HASH_ALGOS+=" hmac(rmd160) hmac(md5)"
 fi
 
 ################################################################################
@@ -922,6 +931,123 @@ ipv4_tcp_md5_novrf()
 }
 
 #
+# TCP-AO tests without VRF
+#
+ipv4_tcp_ao_algos()
+{
+	# basic use case
+	log_start
+	run_cmd nettest -s -T 100:100 --tcpao_algo=$1 --tcpao_maclen=$2 \
+			-X ${AO_PW} -m ${NSB_IP} &
+	sleep 1
+	run_cmd_nsb nettest -r ${NSA_IP} -T 100:100 --tcpao_algo=$1 \
+			    --tcpao_maclen=$2 -X ${AO_PW}
+	log_test $? 0 "TCP-AO [$1:$2]: Single address config"
+
+	# client sends TCP-AO, server not configured
+	log_start
+	show_hint "Should timeout due to TCP-AO password mismatch"
+	run_cmd nettest -s &
+	sleep 1
+	run_cmd_nsb nettest -r ${NSA_IP} -T 100:100 --tcpao_algo=$1 \
+			    --tcpao_maclen=$2 -X ${AO_PW}
+	log_test $? 2 "TCP-AO [$1:$2]: Server no config, client uses password"
+
+	# wrong password
+	log_start
+	show_hint "Should timeout since client uses wrong password"
+	run_cmd nettest -s -T 100:100 --tcpao_algo=$1 --tcpao_maclen=$2 \
+			-X ${AO_PW} -m ${NSB_IP} &
+	sleep 1
+	run_cmd_nsb nettest -r ${NSA_IP} -T 100:100 --tcpao_algo=$1  \
+			    --tcpao_maclen=$2 -X ${AO_WRONG_PW}
+	log_test $? 2 "TCP-AO [$1:$2]: Client uses wrong password"
+}
+
+ipv4_tcp_ao_novrf()
+{
+	#
+	# single address
+	#
+	for i in $AO_HASH_ALGOS ; do
+		ipv4_tcp_ao_algos $i 12
+	done
+
+	# client from different address
+	log_start
+	show_hint "Should timeout due to TCP-AO address mismatch"
+	run_cmd nettest -s -T 100:100 -X ${AO_PW} -m ${NSB_LO_IP} &
+	sleep 1
+	run_cmd_nsb nettest -r ${NSA_IP} -T 100:100 -X ${AO_PW}
+	log_test $? 2 "TCP-AO: Client address does not match address configured with password"
+
+	# client in prefix
+	log_start
+	run_cmd nettest -s -T 100:100 -X ${AO_PW} -m ${NS_NET} &
+	sleep 1
+	run_cmd_nsb nettest  -r ${NSA_IP} -T 100:100 -X ${AO_PW}
+	log_test $? 0 "TCP-AO: Prefix config"
+
+	# client in prefix, wrong password
+	log_start
+	show_hint "Should timeout since client uses wrong password"
+	run_cmd nettest -s -T 100:100 -X ${AO_PW} -m ${NS_NET} &
+	sleep 1
+	run_cmd_nsb nettest -r ${NSA_IP} -T 100:100 -X ${AO_WRONG_PW}
+	log_test $? 2 "TCP-AO: Prefix config, client uses wrong password"
+
+	# client outside of prefix
+	log_start
+	show_hint "Should timeout due to address out of TCP-AO prefix mismatch"
+	run_cmd nettest -s -T 100:100 -X ${AO_PW} -m ${NS_NET} &
+	sleep 1
+	run_cmd_nsb nettest -c ${NSB_LO_IP} -r ${NSA_IP} -T 100:100 -X ${AO_PW}
+	log_test $? 2 "TCP-AO: Prefix config, client address not in configured prefix"
+
+	# TCP-AO more specific tests
+	# sendid != rcvid
+	log_start
+	run_cmd nettest -s -T 100:101 -X ${AO_PW} -m ${NSB_IP} &
+	sleep 1
+	run_cmd_nsb nettest -r ${NSA_IP} -T 101:100 -X ${AO_PW}
+	log_test $? 0 "TCP-AO: Different key ids"
+
+	# Wrong keyid
+	log_start
+	show_hint "Should timeout due to a wrong keyid"
+	run_cmd nettest -s -T 100:100 -X ${AO_PW} -m ${NSB_IP} &
+	sleep 1
+	run_cmd_nsb nettest -r ${NSA_IP} -T 101:101 -X ${AO_PW}
+	log_test $? 2 "TCP-AO: Wrong keyid"
+
+	# Variable maclen
+	ipv4_tcp_ao_algos "cmac(aes128)" 16
+	ipv4_tcp_ao_algos "hmac(sha1)" 16
+	ipv4_tcp_ao_algos "cmac(aes128)" 4
+	ipv4_tcp_ao_algos "hmac(sha1)" 4
+
+	# MD5 and TCP-AO for the same peer
+	log_start
+	run_cmd nettest -s -T 100:100 -M -X ${AO_PW} -m ${NSB_IP}
+	log_test $? 1 "TCP-AO: add MD5 and TCP-AO for the same peer address"
+
+	# Connect with both TCP-AO and MD5 on the socket
+	log_start
+	show_hint "Should fail to connect with both MD5 and TCP-AO on the socket"
+	run_cmd nettest -s -T 100:100 -M -X ${AO_PW} -m ${NSB_IP} &
+	sleep 1
+	run_cmd_nsb nettest -r ${NSA_IP} -T 100:100 -M -X ${AO_PW}
+	log_test $? 1 "TCP-AO: MD5 and TCP-AO on connect()"
+
+	# Exclude TCP options
+	log_start
+	run_cmd nettest -s -T 100:101 -X ${AO_PW} -m ${NSB_IP} --tcpao_excopts &
+	sleep 1
+	run_cmd_nsb nettest -r ${NSA_IP} -T 101:100 -X ${AO_PW} --tcpao_excopts
+	log_test $? 0 "TCP-AO: Exclude TCP options"
+}
+
+#
 # MD5 tests with VRF
 #
 ipv4_tcp_md5()
@@ -1294,6 +1420,8 @@ ipv4_tcp_novrf()
 
 	ipv4_tcp_dontroute 0
 	ipv4_tcp_dontroute 2
+
+	ipv4_tcp_ao_novrf
 }
 
 ipv4_tcp_vrf()
@@ -2607,6 +2735,135 @@ ipv6_tcp_md5_novrf()
 	log_test $? 2 "MD5: Prefix config, client address not in configured prefix"
 }
 
+ipv6_tcp_ao_algos()
+{
+	# basic use case
+	log_start
+	run_cmd nettest -6 -s -T 100:100 --tcpao_algo=$1 --tcpao_maclen=$2 \
+			-X ${AO_PW} -m ${NSB_IP6} &
+	sleep 1
+	run_cmd_nsb nettest -6 -r ${NSA_IP6} -T 100:100 --tcpao_algo=$1  \
+			    --tcpao_maclen=$2 -X ${AO_PW}
+	log_test $? 0 "TCP-AO [$1:$2]: Single address config"
+
+	# client sends TCP-AO, server not configured
+	log_start
+	show_hint "Should timeout since server does not have TCP-AO auth"
+	run_cmd nettest -6 -s &
+	sleep 1
+	run_cmd_nsb nettest -6 -r ${NSA_IP6} -T 100:100 --tcpao_algo=$1  \
+			    --tcpao_maclen=$2 -X ${AO_PW}
+	log_test $? 2 "TCP-AO [$1:$2]: Server no config, client uses password"
+
+	# wrong password
+	log_start
+	show_hint "Should timeout since client uses wrong password"
+	run_cmd nettest -6 -s -T 100:100 --tcpao_algo=$1 --tcpao_maclen=$2 \
+			-X ${AO_PW} -m ${NSB_IP6} &
+	sleep 1
+	run_cmd_nsb nettest -6 -r ${NSA_IP6} -T 100:100 --tcpao_algo=$1 \
+			    --tcpao_maclen=$2 -X ${AO_WRONG_PW}
+	log_test $? 2 "TCP-AO [$1:$2]: Client uses wrong password"
+}
+
+ipv6_tcp_ao_novrf()
+{
+	#
+	# single address
+	#
+	for i in $AO_HASH_ALGOS ; do
+		ipv6_tcp_ao_algos $i 12
+	done
+
+	# client from different address
+	log_start
+	show_hint "Should timeout since server config differs from client"
+	run_cmd nettest -6 -s -T 100:100 -X ${AO_PW} -m ${NSB_LO_IP6} &
+	sleep 1
+	run_cmd_nsb nettest -6 -r ${NSA_IP6} -T 100:100 -X ${AO_PW}
+	log_test $? 2 "TCP-AO: Client address does not match address configured with password"
+
+	# client in prefix
+	log_start
+	run_cmd nettest -6 -s -T 100:100 -X ${AO_PW} -m ${NS_NET6} &
+	sleep 1
+	run_cmd_nsb nettest -6 -r ${NSA_IP6} -T 100:100 -X ${AO_PW}
+	log_test $? 0 "TCP-AO: Prefix config"
+
+	# client in prefix, wrong password
+	log_start
+	show_hint "Should timeout since client uses wrong password"
+	run_cmd nettest -6 -s -T 100:100 -X ${AO_PW} -m ${NS_NET6} &
+	sleep 1
+	run_cmd_nsb nettest -6 -r ${NSA_IP6} -T 100:100 -X ${AO_WRONG_PW}
+	log_test $? 2 "TCP-AO: Prefix config, client uses wrong password"
+
+	# client outside of prefix
+	log_start
+	show_hint "Should timeout since client address is outside of prefix"
+	run_cmd nettest -6 -s -T 100:100 -X ${AO_PW} -m ${NS_NET6} &
+	sleep 1
+	run_cmd_nsb nettest -6 -c ${NSB_LO_IP6} -r ${NSA_IP6} -T 100:100 -X ${AO_PW}
+	log_test $? 2 "TCP-AO: Prefix config, client address not in configured prefix"
+
+	# TCP-AO more specific tests
+	# sendid != rcvid
+	log_start
+	run_cmd nettest -6 -s -T 100:101 -X ${AO_PW} -m ${NSB_IP6} &
+	sleep 1
+	run_cmd_nsb nettest -6 -r ${NSA_IP6} -T 101:100 -X ${AO_PW}
+	log_test $? 0 "TCP-AO: Different key ids"
+
+	# Wrong keyid
+	log_start
+	show_hint "Should timeout due to a wrong keyid"
+	run_cmd nettest -6 -s -T 100:100 -X ${AO_PW} -m ${NSB_IP6} &
+	sleep 1
+	run_cmd_nsb nettest -6 -r ${NSA_IP6} -T 101:101 -X ${AO_PW}
+	log_test $? 2 "TCP-AO: Wrong keyid"
+
+	# Variable maclen
+	ipv6_tcp_ao_algos "cmac(aes128)" 16
+	ipv6_tcp_ao_algos "hmac(sha1)" 16
+	ipv6_tcp_ao_algos "cmac(aes128)" 4
+	ipv6_tcp_ao_algos "hmac(sha1)" 4
+
+	# MD5 and TCP-AO for the same peer
+	log_start
+	run_cmd nettest -6 -s -T 100:100 -M -X ${AO_PW} -m ${NSB_IP6}
+	log_test $? 1 "TCP-AO: add MD5 and TCP-AO for the same peer address"
+
+	# Connect with both TCP-AO and MD5 on the socket
+	log_start
+	show_hint "Should fail to connect with both MD5 and TCP-AO on the socket"
+	run_cmd nettest -6 -s -T 100:100 -M -X ${AO_PW} -m ${NSB_IP6} &
+	sleep 1
+	run_cmd_nsb nettest -6 -r ${NSA_IP6} -T 100:100 -M -X ${AO_PW}
+	log_test $? 1 "TCP-AO: MD5 and TCP-AO on connect()"
+
+	# Exclude TCP options
+	log_start
+	run_cmd nettest -6 -s -T 100:101 -X ${AO_PW} -m ${NSB_IP6} --tcpao_excopts &
+	sleep 1
+	run_cmd_nsb nettest -6 -r ${NSA_IP6} -T 101:100 -X ${AO_PW} --tcpao_excopts
+	log_test $? 0 "TCP-AO: Exclude TCP options"
+
+	# client in prefix, server using ipv6 mapped address
+	log_start
+	run_cmd nettest -6 -s -T 100:100 -X ${AO_PW} -m ${NS_NET_MAPPED} &
+	sleep 1
+	run_cmd_nsb nettest -r ${NSA_IP} -T 100:100 -X ${AO_PW}
+	log_test $? 0 "TCP-AO: Prefix config - IPv6 mapped - Server"
+
+	# client in prefix, client using ipv6 mapped address
+	log_start
+	run_cmd nettest -s -T 100:100 -X ${AO_PW} -m ${NS_NET} &
+	sleep 1
+	# below -m "${NSA_IP_MAPPED}/32" only serves to the set prefix length
+	run_cmd_nsb nettest -6 -r ${NSA_IP_MAPPED} -m "${NSA_IP_MAPPED}/32" -T 100:100 -X ${AO_PW}
+	log_test $? 0 "TCP-AO: Prefix config - IPv6 mapped - Client"
+}
+
 #
 # MD5 tests with VRF
 #
@@ -2869,6 +3126,7 @@ ipv6_tcp_novrf()
 	done
 
 	[ "$fips_enabled" = "1" ] || ipv6_tcp_md5_novrf
+	ipv6_tcp_ao_novrf
 }
 
 ipv6_tcp_vrf()
