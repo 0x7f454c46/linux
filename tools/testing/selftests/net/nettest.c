@@ -359,6 +359,10 @@ static int tcp_ao(int sd, void *addr, socklen_t alen, struct sock_args *args)
 
 		sin6->sin6_port = htons(0);
 	}
+	if ((args->ifindex && args->bind_key_ifindex >= 0) || args->bind_key_ifindex >= 1) {
+		ao.ifindex = args->ifindex;
+		ao.keyflags |= TCP_AO_KEYF_IFINDEX;
+	}
 
 	rc = setsockopt(sd, IPPROTO_TCP, opt, &ao, sizeof(ao));
 	if (rc < 0)
@@ -2100,8 +2104,8 @@ static void print_usage(char *prog)
 	"    --tcpao_excopts        Exclude TCP options [valid with -T]\n"
 	"    -X password   MD5/TCP-AO password\n"
 	"    -m prefix/len prefix and length to use for MD5/TCP-AO key\n"
-	"    --no-bind-key-ifindex: Force TCP_MD5SIG_FLAG_IFINDEX off\n"
-	"    --force-bind-key-ifindex: Force TCP_MD5SIG_FLAG_IFINDEX on\n"
+	"    --no-bind-key-ifindex: Force TCP_MD5SIG_FLAG_IFINDEX and TCP_AO_KEYF_IFINDEX off\n"
+	"    --force-bind-key-ifindex: Force TCP_MD5SIG_FLAG_IFINDEX and TCP_AO_KEYF_IFINDEX on\n"
 	"        (default: only if -I is passed)\n"
 	"    --client-dontroute: don't use gateways for client socket: send\n"
 	"                        packets only if destination is on link (see\n"
