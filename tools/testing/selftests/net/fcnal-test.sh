@@ -1223,6 +1223,217 @@ test_ipv4_md5_vrf__global_server__bind_ifindex0()
 	set_sysctl net.ipv4.tcp_l3mdev_accept="$old_tcp_l3mdev_accept"
 }
 
+#
+# TCP-AO tests with VRF
+#
+ipv4_tcp_ao()
+{
+	#
+	# single address
+	#
+
+	# basic use case
+	log_start
+	run_cmd nettest -s -I ${VRF} -T 100:100 -X ${AO_PW} -m ${NSB_IP} &
+	sleep 1
+	run_cmd_nsb nettest -r ${NSA_IP} -T 100:100 -X ${AO_PW}
+	log_test $? 0 "TCP-AO: VRF: Single address config"
+
+	# client sends TCP-AO, server not configured
+	log_start
+	show_hint "Should timeout since server does not have TCP-AO auth"
+	run_cmd nettest -s -I ${VRF} &
+	sleep 1
+	run_cmd_nsb nettest -r ${NSA_IP} -T 100:100 -X ${AO_PW}
+	log_test $? 2 "TCP-AO: VRF: Server no config, client uses password"
+
+	# wrong password
+	log_start
+	show_hint "Should timeout since client uses wrong password"
+	run_cmd nettest -s -I ${VRF} -T 100:100 -X ${AO_PW} -m ${NSB_IP} &
+	sleep 1
+	run_cmd_nsb nettest -r ${NSA_IP} -T 100:100 -X ${AO_WRONG_PW}
+	log_test $? 2 "TCP-AO: VRF: Client uses wrong password"
+
+	# client from different address
+	log_start
+	show_hint "Should timeout since server config differs from client"
+	run_cmd nettest -s -I ${VRF} -T 100:100 -X ${AO_PW} -m ${NSB_LO_IP} &
+	sleep 1
+	run_cmd_nsb nettest -r ${NSA_IP} -T 100:100 -X ${AO_PW}
+	log_test $? 2 "TCP-AO: VRF: Client address does not match address configured with password"
+
+	# client in prefix
+	log_start
+	run_cmd nettest -s -I ${VRF} -T 100:100 -X ${AO_PW} -m ${NS_NET} &
+	sleep 1
+	run_cmd_nsb nettest  -r ${NSA_IP} -T 100:100 -X ${AO_PW}
+	log_test $? 0 "TCP-AO: VRF: Prefix config"
+
+	# client in prefix, wrong password
+	log_start
+	show_hint "Should timeout since client uses wrong password"
+	run_cmd nettest -s -I ${VRF} -T 100:100 -X ${AO_PW} -m ${NS_NET} &
+	sleep 1
+	run_cmd_nsb nettest -r ${NSA_IP} -T 100:100 -X ${AO_WRONG_PW}
+	log_test $? 2 "TCP-AO: VRF: Prefix config, client uses wrong password"
+
+	# client outside of prefix
+	log_start
+	show_hint "Should timeout since client address is outside of prefix"
+	run_cmd nettest -s -I ${VRF} -T 100:100 -X ${AO_PW} -m ${NS_NET} &
+	sleep 1
+	run_cmd_nsb nettest -c ${NSB_LO_IP} -r ${NSA_IP} -T 100:100 -X ${AO_PW}
+	log_test $? 2 "TCP-AO: VRF: Prefix config, client address not in configured prefix"
+
+	#
+	# TCP-AO more specific tests
+	# sendid != rcvid
+	log_start
+	run_cmd nettest -s -I ${VRF} -T 100:101 -X ${AO_PW} -m ${NSB_IP} &
+	sleep 1
+	run_cmd_nsb nettest -r ${NSA_IP} -T 101:100 -X ${AO_PW}
+	log_test $? 0 "TCP-AO: Different key ids"
+
+	# Wrong keyid
+	log_start
+	show_hint "Should timeout due to a wrong keyid"
+	run_cmd nettest -s -I ${VRF} -T 100:100 -X ${AO_PW} -m ${NSB_IP} &
+	sleep 1
+	run_cmd_nsb nettest -r ${NSA_IP} -T 101:101 -X ${AO_PW}
+	log_test $? 2 "TCP-AO: Wrong keyid"
+
+	#
+	# duplicate config between default VRF and a VRF
+	#
+
+	log_start
+	run_cmd nettest -s -I ${VRF} -T 100:100 -X ${AO_PW} -m ${NSB_IP} &
+	run_cmd nettest -s -T 100:100 -X ${AO_WRONG_PW} -m ${NSB_IP} &
+	sleep 1
+	run_cmd_nsb nettest  -r ${NSA_IP} -T 100:100 -X ${AO_PW}
+	log_test $? 0 "TCP-AO: VRF: Single address config in default VRF and VRF, conn in VRF"
+
+	log_start
+	run_cmd nettest -s -I ${VRF} -T 100:100 -X ${AO_PW} -m ${NSB_IP} &
+	run_cmd nettest -s -T 100:100 -X ${AO_WRONG_PW} -m ${NSB_IP} &
+	sleep 1
+	run_cmd_nsc nettest  -r ${NSA_IP} -T 100:100 -X ${AO_WRONG_PW}
+	log_test $? 0 "TCP-AO: VRF: Single address config in default VRF and VRF, conn in default VRF"
+
+	log_start
+	show_hint "Should timeout since client in default VRF uses VRF password"
+	run_cmd nettest -s -I ${VRF} -T 100:100 -X ${AO_PW} -m ${NSB_IP} &
+	run_cmd nettest -s -T 100:100 -X ${AO_WRONG_PW} -m ${NSB_IP} &
+	sleep 1
+	run_cmd_nsc nettest -r ${NSA_IP} -T 100:100 -X ${AO_PW}
+	log_test $? 2 "TCP-AO: VRF: Single address config in default VRF and VRF, conn in default VRF with VRF pw"
+
+	log_start
+	show_hint "Should timeout since client in VRF uses default VRF password"
+	run_cmd nettest -s -I ${VRF} -T 100:100 -X ${AO_PW} -m ${NSB_IP} &
+	run_cmd nettest -s -T 100:100 -X ${AO_WRONG_PW} -m ${NSB_IP} &
+	sleep 1
+	run_cmd_nsb nettest -r ${NSA_IP} -T 100:100 -X ${AO_WRONG_PW}
+	log_test $? 2 "TCP-AO: VRF: Single address config in default VRF and VRF, conn in VRF with default VRF pw"
+
+	log_start
+	run_cmd nettest -s -I ${VRF} -T 100:100 -X ${AO_PW} -m ${NS_NET} &
+	run_cmd nettest -s -T 100:100 -X ${AO_WRONG_PW} -m ${NS_NET} &
+	sleep 1
+	run_cmd_nsb nettest  -r ${NSA_IP} -T 100:100 -X ${AO_PW}
+	log_test $? 0 "TCP-AO: VRF: Prefix config in default VRF and VRF, conn in VRF"
+
+	log_start
+	run_cmd nettest -s -I ${VRF} -T 100:100 -X ${AO_PW} -m ${NS_NET} &
+	run_cmd nettest -s -T 100:100 -X ${AO_WRONG_PW} -m ${NS_NET} &
+	sleep 1
+	run_cmd_nsc nettest  -r ${NSA_IP} -T 100:100 -X ${AO_WRONG_PW}
+	log_test $? 0 "TCP-AO: VRF: Prefix config in default VRF and VRF, conn in default VRF"
+
+	log_start
+	show_hint "Should timeout since client in default VRF uses VRF password"
+	run_cmd nettest -s -I ${VRF} -T 100:100 -X ${AO_PW} -m ${NS_NET} &
+	run_cmd nettest -s -T 100:100 -X ${AO_WRONG_PW} -m ${NS_NET} &
+	sleep 1
+	run_cmd_nsc nettest -r ${NSA_IP} -T 100:100 -X ${AO_PW}
+	log_test $? 2 "TCP-AO: VRF: Prefix config in default VRF and VRF, conn in default VRF with VRF pw"
+
+	log_start
+	show_hint "Should timeout since client in VRF uses default VRF password"
+	run_cmd nettest -s -I ${VRF} -T 100:100 -X ${AO_PW} -m ${NS_NET} &
+	run_cmd nettest -s -T 100:100 -X ${AO_WRONG_PW} -m ${NS_NET} &
+	sleep 1
+	run_cmd_nsb nettest -r ${NSA_IP} -T 100:100 -X ${AO_WRONG_PW}
+	log_test $? 2 "TCP-AO: VRF: Prefix config in default VRF and VRF, conn in VRF with default VRF pw"
+
+	#
+	# negative tests
+	#
+	log_start
+	run_cmd nettest -s -I ${NSA_DEV} -T 100:100 -X ${AO_PW} -m ${NSB_IP}
+	log_test $? 1 "TCP-AO: VRF: Device must be a VRF - single address"
+
+	log_start
+	run_cmd nettest -s -I ${NSA_DEV} -T 100:100 -X ${AO_PW} -m ${NS_NET}
+	log_test $? 1 "TCP-AO: VRF: Device must be a VRF - prefix"
+
+	test_ipv4_ao_vrf__vrf_server__no_bind_ifindex
+	test_ipv4_ao_vrf__global_server__bind_ifindex0
+}
+
+test_ipv4_ao_vrf__vrf_server__no_bind_ifindex()
+{
+	log_start
+	show_hint "Simulates applications using VRF without TCP_AO_KEYF_IFINDEX"
+	run_cmd nettest -s -I ${VRF} -T 100:100 -X ${AO_PW} -m ${NS_NET} --no-bind-key-ifindex &
+	sleep 1
+	run_cmd_nsb nettest -r ${NSA_IP} -T 100:100 -X ${AO_PW}
+	log_test $? 0 "TCP-AO: VRF: VRF-bound server, unbound key accepts connection"
+
+	log_start
+	show_hint "Binding both the socket and the key is not required but it works"
+	run_cmd nettest -s -I ${VRF} -T 100:100 -X ${AO_PW} -m ${NS_NET} --force-bind-key-ifindex &
+	sleep 1
+	run_cmd_nsb nettest -r ${NSA_IP} -T 100:100 -X ${AO_PW}
+	log_test $? 0 "TCP-AO: VRF: VRF-bound server, bound key accepts connection"
+}
+
+test_ipv4_ao_vrf__global_server__bind_ifindex0()
+{
+	# This particular test needs tcp_l3mdev_accept=1 for Global server to accept VRF connections
+	local old_tcp_l3mdev_accept
+	old_tcp_l3mdev_accept=$(get_sysctl net.ipv4.tcp_l3mdev_accept)
+	set_sysctl net.ipv4.tcp_l3mdev_accept=1
+
+	log_start
+	run_cmd nettest -s -T 100:100 -X ${AO_PW} -m ${NS_NET} --force-bind-key-ifindex &
+	sleep 1
+	run_cmd_nsb nettest -r ${NSA_IP} -T 100:100 -X ${AO_PW}
+	log_test $? 2 "TCP-AO: VRF: Global server, Key bound to ifindex=0 rejects VRF connection"
+
+	log_start
+	run_cmd nettest -s -T 100:100 -X ${AO_PW} -m ${NS_NET} --force-bind-key-ifindex &
+	sleep 1
+	run_cmd_nsc nettest -r ${NSA_IP} -T 100:100 -X ${AO_PW}
+	log_test $? 0 "TCP-AO: VRF: Global server, key bound to ifindex=0 accepts non-VRF connection"
+	log_start
+
+	run_cmd nettest -s -T 100:100 -X ${AO_PW} -m ${NS_NET} --no-bind-key-ifindex &
+	sleep 1
+	run_cmd_nsb nettest -r ${NSA_IP} -T 100:100 -X ${AO_PW}
+	log_test $? 0 "TCP-AO: VRF: Global server, key not bound to ifindex accepts VRF connection"
+
+	log_start
+	run_cmd nettest -s -T 100:100 -X ${AO_PW} -m ${NS_NET} --no-bind-key-ifindex &
+	sleep 1
+	run_cmd_nsc nettest -r ${NSA_IP} -T 100:100 -X ${AO_PW}
+	log_test $? 0 "TCP-AO: VRF: Global server, key not bound to ifindex accepts non-VRF connection"
+
+	# restore value
+	set_sysctl net.ipv4.tcp_l3mdev_accept="$old_tcp_l3mdev_accept"
+}
+
 ipv4_tcp_novrf()
 {
 	local a
@@ -1395,9 +1606,10 @@ ipv4_tcp_vrf()
 	run_cmd nettest -r ${a} -d ${NSA_DEV}
 	log_test_addr ${a} $? 1 "Global server, local connection"
 
-	# run MD5 tests
+	# run TCP-MD5, TCP-AO tests
 	setup_vrf_dup
 	ipv4_tcp_md5
+	ipv4_tcp_ao
 	cleanup_vrf_dup
 
 	#
@@ -2910,6 +3122,162 @@ ipv6_tcp_md5()
 
 }
 
+#
+# TCP-AO tests with VRF
+#
+ipv6_tcp_ao()
+{
+	#
+	# single address
+	#
+
+	# basic use case
+	log_start
+	run_cmd nettest -6 -s -I ${VRF} -T 100:100 -X ${AO_PW} -m ${NSB_IP6} &
+	sleep 1
+	run_cmd_nsb nettest -6 -r ${NSA_IP6} -T 100:100 -X ${AO_PW}
+	log_test $? 0 "TCP-AO: VRF: Single address config"
+
+	# client sends TCP-AO, server not configured
+	log_start
+	show_hint "Should timeout since server does not have TCP-AO auth"
+	run_cmd nettest -6 -s -I ${VRF} &
+	sleep 1
+	run_cmd_nsb nettest -6 -r ${NSA_IP6} -T 100:100 -X ${AO_PW}
+	log_test $? 2 "TCP-AO: VRF: Server no config, client uses password"
+
+	# wrong password
+	log_start
+	show_hint "Should timeout since client uses wrong password"
+	run_cmd nettest -6 -s -I ${VRF} -T 100:100 -X ${AO_PW} -m ${NSB_IP6} &
+	sleep 1
+	run_cmd_nsb nettest -6 -r ${NSA_IP6} -T 100:100 -X ${AO_WRONG_PW}
+	log_test $? 2 "TCP-AO: VRF: Client uses wrong password"
+
+	# client from different address
+	log_start
+	show_hint "Should timeout since server config differs from client"
+	run_cmd nettest -6 -s -I ${VRF} -T 100:100 -X ${AO_PW} -m ${NSB_LO_IP6} &
+	sleep 1
+	run_cmd_nsb nettest -6 -r ${NSA_IP6} -T 100:100 -X ${AO_PW}
+	log_test $? 2 "TCP-AO: VRF: Client address does not match address configured with password"
+
+	# client in prefix
+	log_start
+	run_cmd nettest -6 -s -I ${VRF} -T 100:100 -X ${AO_PW} -m ${NS_NET6} &
+	sleep 1
+	run_cmd_nsb nettest -6 -r ${NSA_IP6} -T 100:100 -X ${AO_PW}
+	log_test $? 0 "TCP-AO: VRF: Prefix config"
+
+	# client in prefix, wrong password
+	log_start
+	show_hint "Should timeout since client uses wrong password"
+	run_cmd nettest -6 -s -I ${VRF} -T 100:100 -X ${AO_PW} -m ${NS_NET6} &
+	sleep 1
+	run_cmd_nsb nettest -6 -r ${NSA_IP6} -T 100:100 -X ${AO_WRONG_PW}
+	log_test $? 2 "TCP-AO: VRF: Prefix config, client uses wrong password"
+
+	# client outside of prefix
+	log_start
+	show_hint "Should timeout since client address is outside of prefix"
+	run_cmd nettest -6 -s -I ${VRF} -T 100:100 -X ${AO_PW} -m ${NS_NET6} &
+	sleep 1
+	run_cmd_nsb nettest -6 -c ${NSB_LO_IP6} -r ${NSA_IP6} -T 100:100 -X ${AO_PW}
+	log_test $? 2 "TCP-AO: VRF: Prefix config, client address not in configured prefix"
+
+	#
+	# TCP-AO more specific tests
+	# sendid != rcvid
+	log_start
+	run_cmd nettest -6 -s -I ${VRF} -T 100:101 -X ${AO_PW} -m ${NSB_IP6} &
+	sleep 1
+	run_cmd_nsb nettest -6 -r ${NSA_IP6} -T 101:100 -X ${AO_PW}
+	log_test $? 0 "TCP-AO: Different key ids"
+
+	# Wrong keyid
+	log_start
+	show_hint "Should timeout due to a wrong keyid"
+	run_cmd nettest -6 -s -I ${VRF} -T 100:100 -X ${AO_PW} -m ${NSB_IP6} &
+	sleep 1
+	run_cmd_nsb nettest -6 -r ${NSA_IP6} -T 101:101 -X ${AO_PW}
+	log_test $? 2 "TCP-AO: Wrong keyid"
+	#
+	# duplicate config between default VRF and a VRF
+	#
+
+	log_start
+	run_cmd nettest -6 -s -I ${VRF} -T 100:100 -X ${AO_PW} -m ${NSB_IP6} &
+	run_cmd nettest -6 -s -T 100:100 -X ${AO_WRONG_PW} -m ${NSB_IP6} &
+	sleep 1
+	run_cmd_nsb nettest -6 -r ${NSA_IP6} -T 100:100 -X ${AO_PW}
+	log_test $? 0 "TCP-AO: VRF: Single address config in default VRF and VRF, conn in VRF"
+
+	log_start
+	run_cmd nettest -6 -s -I ${VRF} -T 100:100 -X ${AO_PW} -m ${NSB_IP6} &
+	run_cmd nettest -6 -s -T 100:100 -X ${AO_WRONG_PW} -m ${NSB_IP6} &
+	sleep 1
+	run_cmd_nsc nettest -6 -r ${NSA_IP6} -T 100:100 -X ${AO_WRONG_PW}
+	log_test $? 0 "TCP-AO: VRF: Single address config in default VRF and VRF, conn in default VRF"
+
+	log_start
+	show_hint "Should timeout since client in default VRF uses VRF password"
+	run_cmd nettest -6 -s -I ${VRF} -T 100:100 -X ${AO_PW} -m ${NSB_IP6} &
+	run_cmd nettest -6 -s -T 100:100 -X ${AO_WRONG_PW} -m ${NSB_IP6} &
+	sleep 1
+	run_cmd_nsc nettest -6 -r ${NSA_IP6} -T 100:100 -X ${AO_PW}
+	log_test $? 2 "TCP-AO: VRF: Single address config in default VRF and VRF, conn in default VRF with VRF pw"
+
+	log_start
+	show_hint "Should timeout since client in VRF uses default VRF password"
+	run_cmd nettest -6 -s -I ${VRF} -T 100:100 -X ${AO_PW} -m ${NSB_IP6} &
+	run_cmd nettest -6 -s -T 100:100 -X ${AO_WRONG_PW} -m ${NSB_IP6} &
+	sleep 1
+	run_cmd_nsb nettest -6 -r ${NSA_IP6} -T 100:100 -X ${AO_WRONG_PW}
+	log_test $? 2 "TCP-AO: VRF: Single address config in default VRF and VRF, conn in VRF with default VRF pw"
+
+	log_start
+	run_cmd nettest -6 -s -I ${VRF} -T 100:100 -X ${AO_PW} -m ${NS_NET6} &
+	run_cmd nettest -6 -s -T 100:100 -X ${AO_WRONG_PW} -m ${NS_NET6} &
+	sleep 1
+	run_cmd_nsb nettest -6 -r ${NSA_IP6} -T 100:100 -X ${AO_PW}
+	log_test $? 0 "TCP-AO: VRF: Prefix config in default VRF and VRF, conn in VRF"
+
+	log_start
+	run_cmd nettest -6 -s -I ${VRF} -T 100:100 -X ${AO_PW} -m ${NS_NET6} &
+	run_cmd nettest -6 -s -T 100:100 -X ${AO_WRONG_PW} -m ${NS_NET6} &
+	sleep 1
+	run_cmd_nsc nettest -6 -r ${NSA_IP6} -T 100:100 -X ${AO_WRONG_PW}
+	log_test $? 0 "TCP-AO: VRF: Prefix config in default VRF and VRF, conn in default VRF"
+
+	log_start
+	show_hint "Should timeout since client in default VRF uses VRF password"
+	run_cmd nettest -6 -s -I ${VRF} -T 100:100 -X ${AO_PW} -m ${NS_NET6} &
+	run_cmd nettest -6 -s -T 100:100 -X ${AO_WRONG_PW} -m ${NS_NET6} &
+	sleep 1
+	run_cmd_nsc nettest -6 -r ${NSA_IP6} -T 100:100 -X ${AO_PW}
+	log_test $? 2 "TCP-AO: VRF: Prefix config in default VRF and VRF, conn in default VRF with VRF pw"
+
+	log_start
+	show_hint "Should timeout since client in VRF uses default VRF password"
+	run_cmd nettest -6 -s -I ${VRF} -T 100:100 -X ${AO_PW} -m ${NS_NET6} &
+	run_cmd nettest -6 -s -T 100:100 -X ${AO_WRONG_PW} -m ${NS_NET6} &
+	sleep 1
+	run_cmd_nsb nettest -6 -r ${NSA_IP6} -T 100:100 -X ${AO_WRONG_PW}
+	log_test $? 2 "TCP-AO: VRF: Prefix config in default VRF and VRF, conn in VRF with default VRF pw"
+
+	#
+	# negative tests
+	#
+	log_start
+	run_cmd nettest -6 -s -I ${NSA_DEV} -T 100:100 -X ${AO_PW} -m ${NSB_IP6}
+	log_test $? 1 "TCP-AO: VRF: Device must be a VRF - single address"
+
+	log_start
+	run_cmd nettest -6 -s -I ${NSA_DEV} -T 100:100 -X ${AO_PW} -m ${NS_NET6}
+	log_test $? 1 "TCP-AO: VRF: Device must be a VRF - prefix"
+
+}
+
 ipv6_tcp_novrf()
 {
 	local a
@@ -3097,9 +3465,10 @@ ipv6_tcp_vrf()
 	run_cmd nettest -6 -r ${a} -d ${NSA_DEV}
 	log_test_addr ${a} $? 1 "Global server, local connection"
 
-	# run MD5 tests
+	# run TCP-MD5, TCP-AO tests
 	setup_vrf_dup
 	ipv6_tcp_md5
+	ipv6_tcp_ao
 	cleanup_vrf_dup
 
 	#
