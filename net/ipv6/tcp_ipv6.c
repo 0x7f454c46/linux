@@ -606,6 +606,7 @@ static int tcp_v6_parse_md5_keys(struct sock *sk, int optname,
 	struct tcp_md5sig cmd;
 	struct sockaddr_in6 *sin6 = (struct sockaddr_in6 *)&cmd.tcpm_addr;
 	union tcp_ao_addr *addr;
+	bool l3flag = false;
 	int l3index = 0;
 	u8 prefixlen;
 	u8 flags;
@@ -635,6 +636,7 @@ static int tcp_v6_parse_md5_keys(struct sock *sk, int optname,
 	    cmd.tcpm_flags & TCP_MD5SIG_FLAG_IFINDEX) {
 		struct net_device *dev;
 
+		l3flag = true;
 		rcu_read_lock();
 		dev = dev_get_by_index_rcu(sock_net(sk), cmd.tcpm_ifindex);
 		if (dev && netif_is_l3_master(dev))
@@ -663,8 +665,11 @@ static int tcp_v6_parse_md5_keys(struct sock *sk, int optname,
 	if (ipv6_addr_v4mapped(&sin6->sin6_addr)) {
 		addr = (union tcp_md5_addr *)&sin6->sin6_addr.s6_addr32[3];
 
-		/* Don't allow keys for peers that have a matching TCP-AO key */
-		if (tcp_ao_do_lookup(sk, addr, AF_INET, -1, -1, 0))
+		/* Don't allow keys for peers that have a matching TCP-AO key.
+		 * See the comment in tcp_ao_add_cmd()
+		 */
+		if (tcp_ao_do_lookup(sk, l3flag ? l3index : -1, addr,
+				     AF_INET, -1, -1, 0))
 			return -EKEYREJECTED;
 		return tcp_md5_do_add(sk, addr,
 				      AF_INET, prefixlen, l3index, flags,
@@ -673,8 +678,11 @@ static int tcp_v6_parse_md5_keys(struct sock *sk, int optname,
 
 	addr = (union tcp_md5_addr *)&sin6->sin6_addr;
 
-	/* Don't allow keys for peers that have a matching TCP-AO key */
-	if (tcp_ao_do_lookup(sk, addr, AF_INET6, -1, -1, 0))
+	/* Don't allow keys for peers that have a matching TCP-AO key.
+	 * See the comment in tcp_ao_add_cmd()
+	 */
+	if (tcp_ao_do_lookup(sk, l3flag ? l3index : -1, addr,
+			     AF_INET6, -1, -1, 0))
 		return -EKEYREJECTED;
 
 	return tcp_md5_do_add(sk, addr, AF_INET6, prefixlen, l3index, flags,
@@ -1260,10 +1268,14 @@ static void tcp_v6_reqsk_send_ack(const struct sock *sk, struct sk_buff *skb,
 			return;
 		if (!aoh)
 			return;
-		ao_key = tcp_v6_ao_do_lookup(sk, addr, aoh->rnext_keyid, -1);
+		ao_key = tcp_ao_do_lookup(sk, l3index,
+					  (union tcp_ao_addr *)addr, AF_INET6,
+					  aoh->rnext_keyid, -1, 0);
 		if (unlikely(!ao_key)) {
 			/* Send ACK with any matching MKT for the peer */
-			ao_key = tcp_v6_ao_do_lookup(sk, addr, -1, -1);
+			ao_key = tcp_ao_do_lookup(sk, l3index,
+						  (union tcp_ao_addr *)addr,
+						  AF_INET6, -1, -1, 0);
 			/* Matching key disappeared (user removed the key?)
 			 * let the handshake timeout.
 			 */
