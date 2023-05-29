@@ -1040,8 +1040,8 @@ static void tcp_v4_timewait_ack(struct sock *sk, struct sk_buff *skb)
 		 * below since sne probably doesn't change once we are
 		 * in timewait state.
 		 */
-		ao_sne = tcp_ao_compute_sne(ao_info->snd_sne,
-					    ao_info->snd_sne_seq,
+		ao_sne = tcp_ao_compute_sne(READ_ONCE(ao_info->snd_sne),
+					    READ_ONCE(ao_info->snd_sne_seq),
 					    tcptw->tw_snd_nxt);
 		rnext_key = READ_ONCE(ao_info->rnext_key);
 		rcv_next = rnext_key->rcvid;
