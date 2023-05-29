@@ -3536,8 +3536,8 @@ static void tcp_snd_sne_update(struct tcp_sock *tp, u32 ack)
 				       lockdep_sock_is_held((struct sock *)tp));
 	if (ao) {
 		if (ack < ao->snd_sne_seq)
-			ao->snd_sne++;
-		ao->snd_sne_seq = ack;
+			WRITE_ONCE(ao->snd_sne, ao->snd_sne + 1);
+		WRITE_ONCE(ao->snd_sne_seq, ack);
 	}
 #endif
 }
@@ -3565,8 +3565,8 @@ static void tcp_rcv_sne_update(struct tcp_sock *tp, u32 seq)
 				       lockdep_sock_is_held((struct sock *)tp));
 	if (ao) {
 		if (seq < ao->rcv_sne_seq)
-			ao->rcv_sne++;
-		ao->rcv_sne_seq = seq;
+			WRITE_ONCE(ao->rcv_sne, ao->rcv_sne + 1);
+		WRITE_ONCE(ao->rcv_sne_seq, seq);
 	}
 #endif
 }
@@ -6416,8 +6416,8 @@ consume:
 					       lockdep_sock_is_held(sk));
 		if (ao) {
 			ao->risn = th->seq;
-			ao->rcv_sne = 0;
-			ao->rcv_sne_seq = ntohl(th->seq);
+			WRITE_ONCE(ao->rcv_sne, 0);
+			WRITE_ONCE(ao->rcv_sne_seq, ntohl(th->seq));
 		}
 #endif
 		tcp_set_state(sk, TCP_SYN_RECV);
