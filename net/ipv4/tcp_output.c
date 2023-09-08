@@ -1457,6 +1457,7 @@ static int __tcp_transmit_skb(struct sock *sk, struct sk_buff *skb,
 		u8 *traffic_key;
 		void *tkey_buf = NULL;
 		__be32 disn;
+		u32 sne;
 
 		sk_gso_disable(sk);
 		if (unlikely(tcb->tcp_flags & TCPHDR_SYN)) {
@@ -1474,9 +1475,12 @@ static int __tcp_transmit_skb(struct sock *sk, struct sk_buff *skb,
 		} else {
 			traffic_key = snd_other_key(ao_key);
 		}
+		sne = tcp_ao_compute_sne(READ_ONCE(ao->snd_sne),
+					 READ_ONCE(tp->snd_una),
+					 ntohl(th->seq));
 		tp->af_specific->calc_ao_hash(opts.hash_location, ao_key, sk, skb,
 					      traffic_key,
-					      opts.hash_location - (u8 *)th, 0);
+					      opts.hash_location - (u8 *)th, sne);
 		kfree(tkey_buf);
 	}
 #endif
