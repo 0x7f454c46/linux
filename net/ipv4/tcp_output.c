@@ -1411,6 +1411,7 @@ static int __tcp_transmit_skb(struct sock *sk, struct sk_buff *skb,
 		void *tkey_buf = NULL;
 		u8 *traffic_key;
 		__be32 disn;
+		u32 sne;
 
 		ao = rcu_dereference_protected(tcp_sk(sk)->ao_info,
 					       lockdep_sock_is_held(sk));
@@ -1432,9 +1433,12 @@ static int __tcp_transmit_skb(struct sock *sk, struct sk_buff *skb,
 		} else {
 			traffic_key = snd_other_key(key.ao_key);
 		}
+		sne = tcp_ao_compute_sne(READ_ONCE(ao->snd_sne),
+					 READ_ONCE(tp->snd_una),
+					 ntohl(th->seq));
 		tp->af_specific->calc_ao_hash(opts.hash_location, key.ao_key,
 					      sk, skb, traffic_key,
-					      opts.hash_location - (u8 *)th, 0);
+					      opts.hash_location - (u8 *)th, sne);
 		kfree(tkey_buf);
 #endif
 	}
