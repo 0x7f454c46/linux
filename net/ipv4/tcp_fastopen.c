@@ -194,6 +194,7 @@ void tcp_fastopen_add_skb(struct sock *sk, struct sk_buff *skb)
 	TCP_SKB_CB(skb)->tcp_flags &= ~TCPHDR_SYN;
 
 	tp->rcv_nxt = TCP_SKB_CB(skb)->end_seq;
+	tcp_ao_sne_set(tp, false, TCP_SKB_CB(skb)->end_seq);
 	__skb_queue_tail(&sk->sk_receive_queue, skb);
 	tp->syn_data_acked = 1;
 
@@ -282,6 +283,7 @@ static struct sock *tcp_fastopen_create_child(struct sock *sk,
 	tcp_init_transfer(child, BPF_SOCK_OPS_PASSIVE_ESTABLISHED_CB, skb);
 
 	tp->rcv_nxt = TCP_SKB_CB(skb)->seq + 1;
+	tcp_ao_sne_set(tp, false, TCP_SKB_CB(skb)->seq + 1);
 
 	tcp_fastopen_add_skb(child, skb);
 

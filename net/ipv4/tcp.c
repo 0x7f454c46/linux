@@ -3545,16 +3545,19 @@ int do_tcp_setsockopt(struct sock *sk, int level, int optname,
 		if (sk->sk_state != TCP_CLOSE) {
 			err = -EPERM;
 		} else if (tp->repair_queue == TCP_SEND_QUEUE) {
-			if (!tcp_rtx_queue_empty(sk))
+			if (!tcp_rtx_queue_empty(sk)) {
 				err = -EPERM;
-			else
+			} else {
 				WRITE_ONCE(tp->write_seq, val);
+				tcp_ao_sne_set(tp, true, val);
+			}
 		} else if (tp->repair_queue == TCP_RECV_QUEUE) {
 			if (tp->rcv_nxt != tp->copied_seq) {
 				err = -EPERM;
 			} else {
 				WRITE_ONCE(tp->rcv_nxt, val);
 				WRITE_ONCE(tp->copied_seq, val);
+				tcp_ao_sne_set(tp, false, val);
 			}
 		} else {
 			err = -EINVAL;

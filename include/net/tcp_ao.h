@@ -121,8 +121,8 @@ struct tcp_ao_info {
 	 * - for time-wait sockets the basis is tw_rcv_nxt/tw_snd_nxt.
 	 *   tw_snd_nxt is not expected to change, while tw_rcv_nxt may.
 	 */
-	u32			snd_sne;
-	u32			rcv_sne;
+	u64			snd_sne;
+	u64			rcv_sne;
 	refcount_t		refcnt;		/* Protects twsk destruction */
 	struct rcu_head		rcu;
 };
@@ -212,7 +212,6 @@ enum skb_drop_reason tcp_inbound_ao_hash(struct sock *sk,
 			const struct sk_buff *skb, unsigned short int family,
 			const struct request_sock *req, int l3index,
 			const struct tcp_ao_hdr *aoh);
-u32 tcp_ao_compute_sne(u32 next_sne, u32 next_seq, u32 seq);
 struct tcp_ao_key *tcp_ao_do_lookup(const struct sock *sk, int l3index,
 				    const union tcp_ao_addr *addr,
 				    int family, int sndid, int rcvid);
@@ -352,6 +351,26 @@ static inline int tcp_ao_set_repair(struct sock *sk,
 	return -ENOPROTOOPT;
 }
 #endif
+
+static inline void tcp_ao_sne_set(struct tcp_sock *tp, bool send, u64 sne)
+{
+#ifdef CONFIG_TCP_AO
+	struct tcp_ao_info *ao;
+
+	if (!static_branch_unlikely(&tcp_ao_needed.key))
+		return;
+
+	ao = rcu_dereference_protected(tp->ao_info,
+				       lockdep_sock_is_held((struct sock *)tp));
+	if (!ao)
+		return;
+
+	if (send)
+		WRITE_ONCE(ao->snd_sne, sne);
+	else
+		WRITE_ONCE(ao->rcv_sne, sne);
+#endif
+}
 
 #if defined(CONFIG_TCP_MD5SIG) || defined(CONFIG_TCP_AO)
 int tcp_do_parse_auth_options(const struct tcphdr *th,

@@ -472,9 +472,10 @@ static int tcp_ao_hash_pseudoheader(unsigned short int family,
 	return -EAFNOSUPPORT;
 }
 
-u32 tcp_ao_compute_sne(u32 next_sne, u32 next_seq, u32 seq)
+static u32 tcp_ao_compute_sne(u64 seq_sne, u32 seq)
 {
-	u32 sne = next_sne;
+	u32 next_seq = (u32)(seq_sne & 0xffffffff);
+	u32 sne = seq_sne >> 32;
 
 	if (before(seq, next_seq)) {
 		if (seq > next_seq)
@@ -483,7 +484,6 @@ u32 tcp_ao_compute_sne(u32 next_sne, u32 next_seq, u32 seq)
 		if (seq < next_seq)
 			sne++;
 	}
-
 	return sne;
 }
 
@@ -731,7 +731,7 @@ int tcp_ao_prepare_reset(const struct sock *sk, struct sk_buff *skb,
 
 			sisn = htonl(tcp_rsk(req)->rcv_isn);
 			disn = htonl(tcp_rsk(req)->snt_isn);
-			*sne = tcp_ao_compute_sne(0, tcp_rsk(req)->snt_isn, seq);
+			*sne = tcp_ao_compute_sne(tcp_rsk(req)->snt_isn, seq);
 		} else {
 			sisn = th->seq;
 			disn = 0;
@@ -763,14 +763,11 @@ int tcp_ao_prepare_reset(const struct sock *sk, struct sk_buff *skb,
 		*keyid = (*key)->rcvid;
 	} else {
 		struct tcp_ao_key *rnext_key;
-		u32 snd_basis;
 
 		if (sk->sk_state == TCP_TIME_WAIT) {
 			ao_info = rcu_dereference(tcp_twsk(sk)->ao_info);
-			snd_basis = tcp_twsk(sk)->tw_snd_nxt;
 		} else {
 			ao_info = rcu_dereference(tcp_sk(sk)->ao_info);
-			snd_basis = tcp_sk(sk)->snd_una;
 		}
 		if (!ao_info)
 			return -ENOENT;
@@ -781,8 +778,7 @@ int tcp_ao_prepare_reset(const struct sock *sk, struct sk_buff *skb,
 		*traffic_key = snd_other_key(*key);
 		rnext_key = READ_ONCE(ao_info->rnext_key);
 		*keyid = rnext_key->rcvid;
-		*sne = tcp_ao_compute_sne(READ_ONCE(ao_info->snd_sne),
-					  snd_basis, seq);
+		*sne = tcp_ao_compute_sne(READ_ONCE(ao_info->snd_sne), seq);
 	}
 	return 0;
 }
@@ -816,8 +812,7 @@ int tcp_ao_transmit_skb(struct sock *sk, struct sk_buff *skb,
 		tp->af_specific->ao_calc_key_sk(key, traffic_key,
 						sk, ao->lisn, disn, true);
 	}
-	sne = tcp_ao_compute_sne(READ_ONCE(ao->snd_sne), READ_ONCE(tp->snd_una),
-				 ntohl(th->seq));
+	sne = tcp_ao_compute_sne(READ_ONCE(ao->snd_sne), ntohl(th->seq));
 	tp->af_specific->calc_ao_hash(hash_location, key, sk, skb, traffic_key,
 				      hash_location - (u8 *)th, sne);
 	kfree(tkey_buf);
@@ -938,8 +933,8 @@ tcp_inbound_ao_hash(struct sock *sk, const struct sk_buff *skb,
 
 	/* Fast-path */
 	if (likely((1 << sk->sk_state) & TCP_AO_ESTABLISHED)) {
-		enum skb_drop_reason err;
 		struct tcp_ao_key *current_key;
+		enum skb_drop_reason err;
 
 		/* Check if this socket's rnext_key matches the keyid in the
 		 * packet. If not we lookup the key based on the keyid
@@ -956,8 +951,7 @@ tcp_inbound_ao_hash(struct sock *sk, const struct sk_buff *skb,
 		if (unlikely(th->syn && !th->ack))
 			goto verify_hash;
 
-		sne = tcp_ao_compute_sne(info->rcv_sne, tcp_sk(sk)->rcv_nxt,
-					 ntohl(th->seq));
+		sne = tcp_ao_compute_sne(READ_ONCE(info->rcv_sne), ntohl(th->seq));
 		/* Established socket, traffic key are cached */
 		traffic_key = rcv_other_key(key);
 		err = tcp_ao_verify_hash(sk, skb, family, info, aoh, key,
@@ -992,7 +986,7 @@ tcp_inbound_ao_hash(struct sock *sk, const struct sk_buff *skb,
 	if ((1 << sk->sk_state) & (TCPF_LISTEN | TCPF_NEW_SYN_RECV)) {
 		/* Make the initial syn the likely case here */
 		if (unlikely(req)) {
-			sne = tcp_ao_compute_sne(0, tcp_rsk(req)->rcv_isn,
+			sne = tcp_ao_compute_sne(tcp_rsk(req)->rcv_isn,
 						 ntohl(th->seq));
 			sisn = htonl(tcp_rsk(req)->rcv_isn);
 			disn = htonl(tcp_rsk(req)->snt_isn);
@@ -1000,8 +994,7 @@ tcp_inbound_ao_hash(struct sock *sk, const struct sk_buff *skb,
 			/* Possible syncookie packet */
 			sisn = htonl(ntohl(th->seq) - 1);
 			disn = htonl(ntohl(th->ack_seq) - 1);
-			sne = tcp_ao_compute_sne(0, ntohl(sisn),
-						 ntohl(th->seq));
+			sne = tcp_ao_compute_sne(ntohl(sisn), ntohl(th->seq));
 		} else if (unlikely(!th->syn)) {
 			/* no way to figure out initial sisn/disn - drop */
 			return SKB_DROP_REASON_TCP_FLAGS;
@@ -1103,7 +1096,8 @@ void tcp_ao_connect_init(struct sock *sk)
 		tp->tcp_header_len += tcp_ao_len_aligned(key);
 
 		ao_info->lisn = htonl(tp->write_seq);
-		ao_info->snd_sne = 0;
+		ao_info->snd_sne = htonl(tp->write_seq);
+		ao_info->rcv_sne = 0;
 	} else {
 		/* Can't happen: tcp_connect() verifies that there's
 		 * at least one tcp-ao key that matches the remote peer.
@@ -1139,7 +1133,7 @@ void tcp_ao_finish_connect(struct sock *sk, struct sk_buff *skb)
 		return;
 
 	WRITE_ONCE(ao->risn, tcp_hdr(skb)->seq);
-	ao->rcv_sne = 0;
+	WRITE_ONCE(ao->rcv_sne, ntohl(tcp_hdr(skb)->seq));
 
 	hlist_for_each_entry_rcu(key, &ao->head, node)
 		tcp_ao_cache_traffic_keys(sk, ao, key);
@@ -1169,6 +1163,8 @@ int tcp_ao_copy_all_matching(const struct sock *sk, struct sock *newsk,
 		return -ENOMEM;
 	new_ao->lisn = htonl(tcp_rsk(req)->snt_isn);
 	new_ao->risn = htonl(tcp_rsk(req)->rcv_isn);
+	new_ao->snd_sne = tcp_rsk(req)->snt_isn;
+	new_ao->rcv_sne = tcp_rsk(req)->rcv_isn;
 	new_ao->ao_required = ao->ao_required;
 	new_ao->accept_icmps = ao->accept_icmps;
 
@@ -1694,6 +1690,8 @@ static int tcp_ao_add_cmd(struct sock *sk, unsigned short int family,
 			goto err_free_sock;
 		}
 		sk_gso_disable(sk);
+		WRITE_ONCE(ao_info->snd_sne, tcp_sk(sk)->snd_una);
+		WRITE_ONCE(ao_info->rcv_sne, tcp_sk(sk)->rcv_nxt);
 		rcu_assign_pointer(tcp_sk(sk)->ao_info, ao_info);
 	}
 
@@ -2334,6 +2332,7 @@ int tcp_ao_set_repair(struct sock *sk, sockptr_t optval, unsigned int optlen)
 	struct tcp_ao_repair cmd;
 	struct tcp_ao_key *key;
 	struct tcp_ao_info *ao;
+	u64 sne;
 	int err;
 
 	if (optlen < sizeof(cmd))
@@ -2354,8 +2353,14 @@ int tcp_ao_set_repair(struct sock *sk, sockptr_t optval, unsigned int optlen)
 
 	WRITE_ONCE(ao->lisn, cmd.snt_isn);
 	WRITE_ONCE(ao->risn, cmd.rcv_isn);
-	WRITE_ONCE(ao->snd_sne, cmd.snd_sne);
-	WRITE_ONCE(ao->rcv_sne, cmd.rcv_sne);
+
+	sne = READ_ONCE(ao->snd_sne) & 0xffffffff;
+	sne += (u64)cmd.snd_sne << 32;
+	WRITE_ONCE(ao->snd_sne, sne);
+
+	sne = READ_ONCE(ao->rcv_sne) & 0xffffffff;
+	sne += (u64)cmd.rcv_sne << 32;
+	WRITE_ONCE(ao->rcv_sne, sne);
 
 	hlist_for_each_entry_rcu(key, &ao->head, node)
 		tcp_ao_cache_traffic_keys(sk, ao, key);
@@ -2388,8 +2393,8 @@ int tcp_ao_get_repair(struct sock *sk, sockptr_t optval, sockptr_t optlen)
 
 	opt.snt_isn	= ao->lisn;
 	opt.rcv_isn	= ao->risn;
-	opt.snd_sne	= READ_ONCE(ao->snd_sne);
-	opt.rcv_sne	= READ_ONCE(ao->rcv_sne);
+	opt.snd_sne	= READ_ONCE(ao->snd_sne) >> 32;
+	opt.rcv_sne	= READ_ONCE(ao->rcv_sne) >> 32;
 	rcu_read_unlock();
 
 	if (copy_to_sockptr(optval, &opt, min_t(int, len, sizeof(opt))))

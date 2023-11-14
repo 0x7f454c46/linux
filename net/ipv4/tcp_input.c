@@ -3572,7 +3572,7 @@ static inline bool tcp_may_update_window(const struct tcp_sock *tp,
 		(ack_seq == tp->snd_wl1 && (nwin > tp->snd_wnd || !nwin));
 }
 
-static void tcp_snd_sne_update(struct tcp_sock *tp, u32 ack)
+static void tcp_ao_snd_sne_update(struct tcp_sock *tp, u32 delta)
 {
 #ifdef CONFIG_TCP_AO
 	struct tcp_ao_info *ao;
@@ -3582,8 +3582,9 @@ static void tcp_snd_sne_update(struct tcp_sock *tp, u32 ack)
 
 	ao = rcu_dereference_protected(tp->ao_info,
 				       lockdep_sock_is_held((struct sock *)tp));
-	if (ao && ack < tp->snd_una)
-		ao->snd_sne++;
+	if (!ao)
+		return;
+	WRITE_ONCE(ao->snd_sne, ao->snd_sne + delta);
 #endif
 }
 
@@ -3594,11 +3595,11 @@ static void tcp_snd_una_update(struct tcp_sock *tp, u32 ack)
 
 	sock_owned_by_me((struct sock *)tp);
 	tp->bytes_acked += delta;
-	tcp_snd_sne_update(tp, ack);
+	tcp_ao_snd_sne_update(tp, delta);
 	tp->snd_una = ack;
 }
 
-static void tcp_rcv_sne_update(struct tcp_sock *tp, u32 seq)
+static void tcp_ao_rcv_sne_update(struct tcp_sock *tp, u32 delta)
 {
 #ifdef CONFIG_TCP_AO
 	struct tcp_ao_info *ao;
@@ -3608,8 +3609,9 @@ static void tcp_rcv_sne_update(struct tcp_sock *tp, u32 seq)
 
 	ao = rcu_dereference_protected(tp->ao_info,
 				       lockdep_sock_is_held((struct sock *)tp));
-	if (ao && seq < tp->rcv_nxt)
-		ao->rcv_sne++;
+	if (!ao)
+		return;
+	WRITE_ONCE(ao->rcv_sne, ao->rcv_sne + delta);
 #endif
 }
 
@@ -3620,7 +3622,7 @@ static void tcp_rcv_nxt_update(struct tcp_sock *tp, u32 seq)
 
 	sock_owned_by_me((struct sock *)tp);
 	tp->bytes_received += delta;
-	tcp_rcv_sne_update(tp, seq);
+	tcp_ao_rcv_sne_update(tp, delta);
 	WRITE_ONCE(tp->rcv_nxt, seq);
 }
 
@@ -6400,6 +6402,7 @@ consume:
 		 * move to established.
 		 */
 		WRITE_ONCE(tp->rcv_nxt, TCP_SKB_CB(skb)->seq + 1);
+		tcp_ao_sne_set(tp, false, TCP_SKB_CB(skb)->seq + 1);
 		tp->rcv_wup = TCP_SKB_CB(skb)->seq + 1;
 
 		/* RFC1323: The window in SYN & SYN/ACK segments is
@@ -6510,6 +6513,7 @@ consume:
 		}
 
 		WRITE_ONCE(tp->rcv_nxt, TCP_SKB_CB(skb)->seq + 1);
+		tcp_ao_sne_set(tp, false, TCP_SKB_CB(skb)->seq + 1);
 		WRITE_ONCE(tp->copied_seq, tp->rcv_nxt);
 		tp->rcv_wup = TCP_SKB_CB(skb)->seq + 1;
 
@@ -6722,6 +6726,7 @@ int tcp_rcv_state_process(struct sock *sk, struct sk_buff *skb)
 		if (sk->sk_socket)
 			sk_wake_async(sk, SOCK_WAKE_IO, POLL_OUT);
 
+		tcp_ao_sne_set(tp, true, TCP_SKB_CB(skb)->ack_seq);
 		tp->snd_una = TCP_SKB_CB(skb)->ack_seq;
 		tp->snd_wnd = ntohs(th->window) << tp->rx_opt.snd_wscale;
 		tcp_init_wl(tp, TCP_SKB_CB(skb)->seq);
