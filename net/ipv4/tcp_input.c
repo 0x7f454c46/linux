@@ -3582,8 +3582,14 @@ static void tcp_snd_sne_update(struct tcp_sock *tp, u32 ack)
 
 	ao = rcu_dereference_protected(tp->ao_info,
 				       lockdep_sock_is_held((struct sock *)tp));
-	if (ao && ack < tp->snd_una)
+	if (ao && ack < tp->snd_una) {
+		unsigned long flags;
+
+		write_lock_irqsave(&ao->sne_lock, flags);
 		ao->snd_sne++;
+		tp->snd_una = ack;
+		write_unlock_irqrestore(&ao->sne_lock, flags);
+	}
 #endif
 }
 
@@ -3608,8 +3614,14 @@ static void tcp_rcv_sne_update(struct tcp_sock *tp, u32 seq)
 
 	ao = rcu_dereference_protected(tp->ao_info,
 				       lockdep_sock_is_held((struct sock *)tp));
-	if (ao && seq < tp->rcv_nxt)
+	if (ao && seq < tp->rcv_nxt) {
+		unsigned long flags;
+
+		write_lock_irqsave(&ao->sne_lock, flags);
 		ao->rcv_sne++;
+		WRITE_ONCE(tp->rcv_nxt, seq);
+		write_unlock_irqrestore(&ao->sne_lock, flags);
+	}
 #endif
 }
 

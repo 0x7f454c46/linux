@@ -230,6 +230,7 @@ static struct tcp_ao_info *tcp_ao_alloc_info(gfp_t flags)
 		return NULL;
 	INIT_HLIST_HEAD(&ao->head);
 	refcount_set(&ao->refcnt, 1);
+	rwlock_init(&ao->sne_lock);
 
 	return ao;
 }
@@ -472,10 +473,8 @@ static int tcp_ao_hash_pseudoheader(unsigned short int family,
 	return -EAFNOSUPPORT;
 }
 
-u32 tcp_ao_compute_sne(u32 next_sne, u32 next_seq, u32 seq)
+static u32 tcp_ao_compute_sne(u32 sne, u32 next_seq, u32 seq)
 {
-	u32 sne = next_sne;
-
 	if (before(seq, next_seq)) {
 		if (seq > next_seq)
 			sne--;
@@ -483,7 +482,6 @@ u32 tcp_ao_compute_sne(u32 next_sne, u32 next_seq, u32 seq)
 		if (seq < next_seq)
 			sne++;
 	}
-
 	return sne;
 }
 
@@ -763,14 +761,15 @@ int tcp_ao_prepare_reset(const struct sock *sk, struct sk_buff *skb,
 		*keyid = (*key)->rcvid;
 	} else {
 		struct tcp_ao_key *rnext_key;
-		u32 snd_basis;
+		const u32 *snd_basis;
+		unsigned long flags;
 
 		if (sk->sk_state == TCP_TIME_WAIT) {
 			ao_info = rcu_dereference(tcp_twsk(sk)->ao_info);
-			snd_basis = tcp_twsk(sk)->tw_snd_nxt;
+			snd_basis = &tcp_twsk(sk)->tw_snd_nxt;
 		} else {
 			ao_info = rcu_dereference(tcp_sk(sk)->ao_info);
-			snd_basis = tcp_sk(sk)->snd_una;
+			snd_basis = &tcp_sk(sk)->snd_una;
 		}
 		if (!ao_info)
 			return -ENOENT;
@@ -781,8 +780,10 @@ int tcp_ao_prepare_reset(const struct sock *sk, struct sk_buff *skb,
 		*traffic_key = snd_other_key(*key);
 		rnext_key = READ_ONCE(ao_info->rnext_key);
 		*keyid = rnext_key->rcvid;
-		*sne = tcp_ao_compute_sne(READ_ONCE(ao_info->snd_sne),
-					  snd_basis, seq);
+		read_lock_irqsave(&ao_info->sne_lock, flags);
+		*sne = tcp_ao_compute_sne(ao_info->snd_sne,
+					  READ_ONCE(*snd_basis), seq);
+		read_unlock_irqrestore(&ao_info->sne_lock, flags);
 	}
 	return 0;
 }
@@ -795,6 +796,7 @@ int tcp_ao_transmit_skb(struct sock *sk, struct sk_buff *skb,
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct tcp_ao_info *ao;
 	void *tkey_buf = NULL;
+	unsigned long flags;
 	u8 *traffic_key;
 	u32 sne;
 
@@ -816,8 +818,10 @@ int tcp_ao_transmit_skb(struct sock *sk, struct sk_buff *skb,
 		tp->af_specific->ao_calc_key_sk(key, traffic_key,
 						sk, ao->lisn, disn, true);
 	}
-	sne = tcp_ao_compute_sne(READ_ONCE(ao->snd_sne), READ_ONCE(tp->snd_una),
-				 ntohl(th->seq));
+	read_lock_irqsave(&ao->sne_lock, flags);
+	sne = tcp_ao_compute_sne(ao->snd_sne,
+				 READ_ONCE(tp->snd_una), ntohl(th->seq));
+	read_unlock_irqrestore(&ao->sne_lock, flags);
 	tp->af_specific->calc_ao_hash(hash_location, key, sk, skb, traffic_key,
 				      hash_location - (u8 *)th, sne);
 	kfree(tkey_buf);
@@ -938,8 +942,9 @@ tcp_inbound_ao_hash(struct sock *sk, const struct sk_buff *skb,
 
 	/* Fast-path */
 	if (likely((1 << sk->sk_state) & TCP_AO_ESTABLISHED)) {
-		enum skb_drop_reason err;
 		struct tcp_ao_key *current_key;
+		enum skb_drop_reason err;
+		unsigned long flags;
 
 		/* Check if this socket's rnext_key matches the keyid in the
 		 * packet. If not we lookup the key based on the keyid
@@ -956,8 +961,11 @@ tcp_inbound_ao_hash(struct sock *sk, const struct sk_buff *skb,
 		if (unlikely(th->syn && !th->ack))
 			goto verify_hash;
 
-		sne = tcp_ao_compute_sne(info->rcv_sne, tcp_sk(sk)->rcv_nxt,
+		read_lock_irqsave(&info->sne_lock, flags);
+		sne = tcp_ao_compute_sne(info->rcv_sne,
+					 READ_ONCE(tcp_sk(sk)->rcv_nxt),
 					 ntohl(th->seq));
+		read_unlock_irqrestore(&info->sne_lock, flags);
 		/* Established socket, traffic key are cached */
 		traffic_key = rcv_other_key(key);
 		err = tcp_ao_verify_hash(sk, skb, family, info, aoh, key,
