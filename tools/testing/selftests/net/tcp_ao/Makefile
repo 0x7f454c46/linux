@@ -10,6 +10,7 @@ TEST_BOTH_AF += self-connect
 TEST_BOTH_AF += seq-ext
 TEST_BOTH_AF += setsockopt-closed
 TEST_BOTH_AF += unsigned-md5
+TEST_BOTH_AF += tmp
 
 TEST_IPV4_PROGS := $(TEST_BOTH_AF:%=%_ipv4)
 TEST_IPV6_PROGS := $(TEST_BOTH_AF:%=%_ipv6)
